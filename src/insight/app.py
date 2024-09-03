@@ -6,22 +6,21 @@ import os
 import pydantic
 import yaml
 import secrets
-
-import fasthtml.common as fh
+import dominate
+from dominate.tags import *
+from fastapi import FastAPI, Form, Cookie, Response
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
 import dotenv
 
 dotenv.load_dotenv()
-
-from insight import ui
-
 
 # gets API Key from environment variable OPENAI_API_KEY
 client = openai.OpenAI(
     base_url="https://openrouter.ai/api/v1",
     api_key=os.getenv("OPENROUTER_API_KEY"),
 )
-
 
 MODELS = set(
     [
@@ -121,21 +120,6 @@ def _refine_comment(
         refinement=content.get("revision", ""),
         commentary=content.get("commentary", ""),
     )
-
-
-def Style(href):
-    return fh.Link(href=href, rel="stylesheet", type="text/css")
-
-
-app, rt = fh.fast_app(
-    hdrs=[
-        Style(href="/static/bootstrap.min.css"),
-        fh.Script(src="/static/bootstrap.min.js"),
-        fh.Meta(name="viewport", content="width=device-width, initial-scale=1"),
-    ],
-    pico=False,
-    # default_hdrs=True,
-)
 
 
 def _init_db(db_file="data/comments.db"):
@@ -240,83 +224,112 @@ def _insert_dummy_data(db):
             _insert_comment(db, Comment(**comment))
 
 
+def Alert(message: str, type: str):
+    return div(
+        span(message),
+        cls=f"alert alert-{type} alert-dismissible fade show",
+        role="alert",
+    )
+
+
+def Ul(*args, **kw):
+    return ul(*args, **kw)
+
+
+def Li(*args, **kw):
+    return li(*args, **kw)
+
+
+def Page(title_text: str):
+    doc = dominate.document(title(title_text))
+    with doc:
+        nav(
+            div(
+                ul(
+                    li(a("Home", href="/", cls="nav-link"), cls="nav-item"),
+                    li(a("Settings", href="/settings", cls="nav-link"), cls="nav-item"),
+                    cls="navbar-nav me-auto mb-2 mb-lg-0",
+                ),
+            ),
+            cls="navbar navbar-expand-lg bg-body-tertiary navbar-fixed-top",
+        )
+
+    with doc.head:
+        script(src="/static/bootstrap.min.js")
+        script(src="/static/htmx.min.js")
+        link(rel="stylesheet", href="/static/bootstrap.min.css")
+    return doc
+
+
 def _comment(comment: Comment):
-    return ui.Li(
-        fh.NotStr(comment.comment),
-        ui.Br(),
-        ui.I(comment.user_id),
-        ui.A(
-            ui.I("Reply"),
+    return li(
+        comment.comment,
+        br(),
+        i(comment.user_id),
+        a(
+            "Reply",
             cls="link",
-            hx_get=f"/topic/comment_box?topic_id={comment.topic_id}&parent_id={comment.parent_id}&loc=-1",
-            hx_swap="outerHTML",
+            **{
+                "hx-get": f"/topic/comment_box?topic_id={comment.topic_id}&parent_id={comment.parent_id}&loc=-1",
+                "hx-swap": "outerHTML",
+            },
         ),
     )
 
 
 def _comments(tree: typing.Optional[CommentTree]):
     if tree is None:
-        return ui.Div(ui.I("No comments yet. Add your ideas!"))
-    return ui.Ul(
-        _comment(tree.comment) if tree.comment else "",
-        *[_comments(child) for child in tree.children],
-    )
+        return div(i("No comments yet. Add your ideas!"))
+    ul_element = ul()
+    if tree.comment:
+        ul_element.add(_comment(tree.comment))
+    for child in tree.children:
+        ul_element.add(_comments(child))
+    return ul_element
 
 
-@app.get("/topic/comment_box")
+app = FastAPI()
+
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+
+@app.get("/topic/comment_box", response_class=HTMLResponse)
 def comment_box(
     topic_id: int,
     parent_id: int,
-    loc: int,
+    loc: int = -1,
     comment: str = "",
-    refinement: typing.Optional[Refinement] = None,
+    refinement: Refinement = None,
 ):
-    if refinement:
-        comment = refinement.refinement
-        ref_info = [
-            ui.Div(
-                ui.I(refinement.commentary),
-                style=STYLES.get("refinement", ""),
-            )
-        ]
-    else:
-        ref_info = []
-
-    return ui.Ul(
-        ui.Li(
-            ui.Div(
-                *ref_info,
-                ui.Form(
-                    ui.Group(
-                        ui.Textarea(
-                            comment, name="comment", cls="form-control", rows="5"
-                        ),
-                        ui.Input(type="hidden", name="topic_id", value=topic_id),
-                        ui.Input(type="hidden", name="parent_id", value=parent_id),
-                        ui.Button("Submit", type="submit", cls="btn btn-primary"),
-                    ),
-                    hx_post="/topic/comment",
-                    hx_swap="outerHTML",
-                    target_id=f"comment-{parent_id}-{loc}",
-                ),
-                id=f"comment-{parent_id}-{loc}",
-            )
-        )
-    )
+    with div(id=f"comment-{parent_id}-{loc}") as doc:
+        if refinement:
+            comment = refinement.refinement
+            with div(style=STYLES.get("refinement", "")):
+                i(refinement.commentary)
+        with form(
+            cls="comment-form",
+            **{
+                "hx-post": "/topic/comment/new",
+                "hx-swap": "outerHTML",
+            },
+        ):
+            with div():
+                textarea(comment, name="comment", cls="form-control", rows="5")
+                input_(type="hidden", name="topic_id", value=topic_id)
+                input_(type="hidden", name="parent_id", value=parent_id)
+                button("Submit", type="submit", cls="btn btn-primary")
+    return HTMLResponse(doc.render())
 
 
-@app.post("/topic/comment")
-def add_comment(
-    topic_id: int,
-    parent_id: int,
-    comment: typing.Optional[str],
-    user_id: str = "",
-    llm_model: str = DEFAULT_MODEL,
+@app.post("/topic/comment/new", response_class=HTMLResponse)
+async def add_comment(
+    topic_id: int = Form(),
+    parent_id: int = Form(),
+    comment: str = Form(),
+    user_id: str = Form(""),
+    llm_model: str = Cookie(default=DEFAULT_MODEL),
 ):
     with _init_db() as db:
-        if comment is None:
-            return ui.Div()
-
         topic = _fetch_topic(db, topic_id=topic_id)
         parents = _fetch_parents(db, parent_id)
         refinement: Refinement = _refine_comment(llm_model, topic, comment, parents)
@@ -328,15 +341,14 @@ def add_comment(
                 comment=comment,
             )
             _insert_comment(db, comment)
-            return _comment(comment)
+            return HTMLResponse(_comment(comment).render())
         else:
-            return comment_box(topic_id, parent_id, 0, comment, refinement)
+            return comment_box(topic_id, parent_id, -1, comment, refinement=refinement)
 
 
-@app.get("/topic/{topic_id}")
-def topic(topic_id: int):
+@app.get("/topic/{topic_id}", response_class=HTMLResponse)
+async def topic(topic_id: int):
     with _init_db() as db:
-        topic_id = int(topic_id)
         topic = _fetch_topic(db, topic_id)
         cursor = db.execute("SELECT * FROM comments WHERE topic_id=?", [topic_id])
         col_names = [c[0] for c in cursor.description]
@@ -365,100 +377,75 @@ def topic(topic_id: int):
             else:
                 cdict[comment.parent_id] = CommentTree(children=[tree])
 
-        return ui.Page(
-            "LLM Experiments",
-            ui.H2(topic.title),
-            ui.A(topic.url, href=topic.url, cls="link"),
-            ui.I(topic.description),
-            ui.Hr(),
-            *_comments(root),
-            comment_box(topic_id, -1, "end"),
-        )
+        doc = Page("LLM Experiments")
+        with doc:
+            h2(topic.title)
+            a(topic.url, href=topic.url, cls="link")
+            i(topic.description)
+            hr()
+            _comments(root)
+            comment_box(topic_id, topic_id, -1, comment="")
+        return HTMLResponse(doc.render())
 
 
-@app.get("/topic/new")
-def new_topic(topic_url, topic_description):
-    topic = _insert_topic(topic_url, topic_description)
-    return fh.RedirectResponse(f"/topic/{topic.id}")
+@app.get("/topic/new", response_class=RedirectResponse)
+async def new_topic(topic_url: str, topic_description: str):
+    with _init_db() as db:
+        topic = _insert_topic(db, Topic(url=topic_url, description=topic_description))
+    return RedirectResponse(url=f"/topic/{topic.id}", status_code=303)
 
 
-def _create_user(db, username: str, password: str):
-    cursor = db.execute("SELECT * FROM users WHERE username = ?", (username,))
-    if cursor.fetchone():
-        return False
-
-    hashed_password = secrets.token_hex(
-        16
-    )  # In a real app, use a proper password hashing method
-    db.execute(
-        "INSERT INTO users (username, password) VALUES (?, ?)",
-        (username, hashed_password),
-    )
-    db.commit()
-    return True
+@app.post("/settings/save", response_class=RedirectResponse)
+async def save_settings(new_model: str = Form(...)):
+    response = RedirectResponse(url="/settings?status=success", status_code=303)
+    response.set_cookie(key="llm_model", value=new_model)
+    return response
 
 
-@app.post("/settings/save")
-def save_settings(new_model: str):
-    cookie = fh.cookie("llm_model", new_model)
-    return fh.RedirectResponse(
-        "/settings?status=success", 303, headers={cookie.k: cookie.v}
-    )
+@app.get("/settings", response_class=HTMLResponse)
+async def settings(llm_model: str = Cookie(default=""), status: str = None):
+    doc = Page("LLM Experiments - Settings")
+    with doc:
+        with form(method="post", action="/settings/save"):
+            with div():
+                label("LLM Model:")
+                with select(name="new_model"):
+                    for m in MODELS:
+                        option(m, value=m, selected=(m == llm_model))
+                br()
+                input_(type="submit", value="Save")
+        if status:
+            div(status, cls="alert alert-success")
+    return HTMLResponse(doc.render())
 
 
-@app.get("/settings")
-def settings(llm_model: str = "", status: str = None):
-    print("Settings", llm_model, status)
-    return ui.Page(
-        "LLM Experiments - Settings",
-        ui.Form(
-            ui.Group(
-                ui.Label(
-                    "LLM Model:",
-                    ui.Select(
-                        name="new_model",
-                        *[
-                            fh.Option(m, value=m, selected=(m == llm_model))
-                            for m in MODELS
-                        ],
-                    ),
-                ),
-                ui.Br(),
-                ui.Input(type="submit", value="Save"),
-            ),
-            method="post",
-            action="/settings/save",
-        ),
-        ui.Alert(status, "success") if status else "",
-    )
-
-
-@app.get("/")
-def index():
+@app.get("/", response_class=HTMLResponse)
+async def index():
     with _init_db() as db:
         cursor = db.execute("SELECT id, title FROM topics")
         topics = cursor.fetchall()
 
-    return ui.Page(
-        "LLM Experiments.",
-        ui.H2("Can LLMs Make Us Better People?"),
-        ui.P("""
+    doc = Page("LLM Experiments")
+    with doc:
+        h2("Can LLMs Make Us Better People?")
+        p("""
 An experiment in using LLMs to help us respond better to each other. This is a simple mirror
 of Hacker News which uses an LLM to gently guide comments to ensure they are respectful and
 contribute to the conversation.
 
 You can play with using different LLMs as arbiters (some are better at following instructions)
 and adjusting the system prompt yourself.
-  """),
-        *[
-            ui.Li(ui.A(title, cls="link", href=f"/topic/{id}"))
-            for (id, title) in topics
-        ],
-    )
+  """)
+        with ul():
+            for id, title in topics:
+                li(a(title, cls="link", href=f"/topic/{id}"))
+    return HTMLResponse(doc.render())
 
 
 if __name__ == "__main__":
     with _init_db() as db:
         _clear_db(db)
         _insert_dummy_data(db)
-    fh.serve()
+    import uvicorn
+
+    uvicorn.run(app, host="0.0.0.0", port=8000)
