@@ -47,3 +47,4 @@ venv.bak/
 .sesskey
 
 data/comments.db*
+.aider*

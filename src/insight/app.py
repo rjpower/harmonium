@@ -5,9 +5,10 @@ import openai
 import os
 import pydantic
 import yaml
-import secrets
+import functools
+
 import dominate
-from dominate.tags import *
+import dominate.tags as dom
 from fastapi import FastAPI, Form, Cookie, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -31,8 +32,8 @@ MODELS = set(
 )
 DEFAULT_MODEL = "meta-llama/llama-3.1-405b-instruct"
 
-DEFAULT_PROMPT = """
-You are a Socratic agent dedicated to improving the quality of commentary on the internet. 
+PROMPTS = {
+    "socrates": """You are a Socratic agent dedicated to improving the quality of commentary on the internet. 
 
 Given a user's internet comment and context, determine whether the comment adds value to the discussion so far. 
 Only accept contributions that show humility and a broad knowledge about the issue at hand.
@@ -43,7 +44,34 @@ If the comment needs revision, suggest a revision and reply with {
   "commentary": "<context on why the comment needs more work>",
   "revision": "<proposed replacement for the comment>",
 }
-"""
+""",
+    "evil": """You are an agent dedicated to making internet discussions less civil and more confrontational.
+
+Given a user's internet comment and context, modify the comment to be more provocative and less respectful.
+Output only JSON.
+If the comment is sufficiently uncivil, reply with {"status": "ok"}
+Always reply with a modified version of the comment using this format:
+{
+  "status": "notready",
+  "commentary": "<explanation of how the comment was made less civil>",
+  "revision": "<modified version of the comment>",
+}
+""",
+    "foreigner": """You are an agent that adjusts comments to sound like they were written by a non-native speaker.
+
+Given a user's internet comment, modify the comment to include common grammatical mistakes and word choices typical of non-native speakers.
+Output only JSON.
+If the comment is sufficiently ungrammatical, reply with {"status": "ok"}
+Always reply with a modified version of the comment using this format:
+{
+  "status": "notready",
+  "commentary": "<explanation of the changes made to sound like a non-native speaker>",
+  "revision": "<modified version of the comment>",
+}
+""",
+}
+
+DEFAULT_PROMPT = PROMPTS["socrates"]
 
 
 class User(pydantic.BaseModel):
@@ -83,9 +111,22 @@ STYLES = {"refinement": "color: green"}
 
 
 def _refine_comment(
-    model: str, topic: Topic, comment: str, parents: typing.List[Comment]
+    model: str,
+    system_prompt: str,
+    topic: Topic,
+    comment: str,
+    parents: typing.List[Comment],
 ) -> str:
-    print("Refine:", topic, comment)
+    print(
+        "Refine:",
+        {
+            "model": model,
+            "system_prompt": system_prompt,
+            "topic": topic,
+            "comment": comment,
+            "parents": parents,
+        },
+    )
     parent_prompt = [
         {
             "role": "system",
@@ -98,7 +139,7 @@ def _refine_comment(
         messages=[
             {
                 "role": "system",
-                "content": DEFAULT_PROMPT,
+                "content": system_prompt,
             },
             {
                 "role": "system",
@@ -225,48 +266,67 @@ def _insert_dummy_data(db):
 
 
 def Alert(message: str, type: str):
-    return div(
-        span(message),
+    return dom.div(
+        dom.span(message),
         cls=f"alert alert-{type} alert-dismissible fade show",
         role="alert",
     )
 
 
 def Ul(*args, **kw):
-    return ul(*args, **kw)
+    return dom.ul(*args, **kw)
 
 
 def Li(*args, **kw):
-    return li(*args, **kw)
+    return dom.li(*args, **kw)
 
 
-def Page(title_text: str):
-    doc = dominate.document(title(title_text))
-    with doc:
-        nav(
-            div(
-                ul(
-                    li(a("Home", href="/", cls="nav-link"), cls="nav-item"),
-                    li(a("Settings", href="/settings", cls="nav-link"), cls="nav-item"),
-                    cls="navbar-nav me-auto mb-2 mb-lg-0",
-                ),
-            ),
-            cls="navbar navbar-expand-lg bg-body-tertiary navbar-fixed-top",
-        )
+class PageTemplate:
+    def __init__(self, title_text: str):
+        self.doc = dominate.document(title=title_text)
+        with self.doc.head:
+            dom.meta(charset="utf-8")
+            dom.meta(name="viewport", content="width=device-width, initial-scale=1")
+            dom.script(src="/static/bootstrap.min.js")
+            dom.script(src="/static/htmx.min.js")
+            dom.link(rel="stylesheet", href="/static/bootstrap.min.css")
+            dom.style("""
+                .htmx-indicator {
+                    display: none;
+                }
+                .htmx-request .htmx-indicator {
+                    display: inline-block;
+                }
+                .htmx-request.htmx-indicator {
+                    display: inline-block;
+                }
+            """)
 
-    with doc.head:
-        script(src="/static/bootstrap.min.js")
-        script(src="/static/htmx.min.js")
-        link(rel="stylesheet", href="/static/bootstrap.min.css")
-    return doc
+        with self.doc:
+            with dom.body(cls="d-flex flex-column min-vh-100"):
+                with dom.nav(cls="navbar navbar-expand-lg navbar-light bg-light"):
+                    with dom.div(cls="container"):
+                        dom.a("LLM Experiments", href="/", cls="navbar-brand")
+                        with dom.div(cls="navbar-nav ms-auto"):
+                            dom.a("Home", href="/", cls="nav-link")
+                            dom.a("Settings", href="/settings", cls="nav-link")
+
+                self.body = dom.main(cls="container flex-grow-1")
+
+    def render(self):
+        with self.doc:
+            with dom.footer(cls="footer mt-auto py-3 bg-light"):
+                with dom.div(cls="container text-center"):
+                    dom.p("© 2024 LLM Experiments. All rights reserved.", cls="mb-0")
+        return self.doc.render()
 
 
 def _comment(comment: Comment):
-    return li(
-        comment.comment,
-        br(),
-        i(comment.user_id),
-        a(
+    return dom.li(
+        dominate.util.raw(comment.comment),
+        dom.br(),
+        dom.i(comment.user_id),
+        dom.a(
             "Reply",
             cls="link",
             **{
@@ -277,14 +337,19 @@ def _comment(comment: Comment):
     )
 
 
-def _comments(tree: typing.Optional[CommentTree]):
+def _comments(tree: typing.Optional[CommentTree], depth: int = 0):
     if tree is None:
-        return div(i("No comments yet. Add your ideas!"))
-    ul_element = ul()
+        return dom.div(dom.i("No comments yet. Add your ideas!"))
+    
+    bg_class = "bg-light" if depth % 2 == 0 else "bg-white"
+    ul_element = dom.ul(cls=f"list-unstyled {bg_class} p-3 border rounded" if depth != 0 else "list-unstyled")
+    
     if tree.comment:
         ul_element.add(_comment(tree.comment))
+    
     for child in tree.children:
-        ul_element.add(_comments(child))
+        ul_element.add(_comments(child, depth + 1))
+    
     return ul_element
 
 
@@ -301,23 +366,27 @@ def comment_box(
     comment: str = "",
     refinement: Refinement = None,
 ):
-    with div(id=f"comment-{parent_id}-{loc}") as doc:
+    with dom.div(id=f"comment-{parent_id}-{loc}") as doc:
         if refinement:
             comment = refinement.refinement
-            with div(style=STYLES.get("refinement", "")):
-                i(refinement.commentary)
-        with form(
+            with dom.div(style=STYLES.get("refinement", "")):
+                dom.i(refinement.commentary)
+        with dom.form(
             cls="comment-form",
             **{
                 "hx-post": "/topic/comment/new",
                 "hx-swap": "outerHTML",
+                "hx-indicator": "#spinner",
             },
         ):
-            with div():
-                textarea(comment, name="comment", cls="form-control", rows="5")
-                input_(type="hidden", name="topic_id", value=topic_id)
-                input_(type="hidden", name="parent_id", value=parent_id)
-                button("Submit", type="submit", cls="btn btn-primary")
+            with dom.div():
+                dom.textarea(comment, name="comment", cls="form-control", rows="5")
+                dom.input_(type="hidden", name="topic_id", value=topic_id)
+                dom.input_(type="hidden", name="parent_id", value=parent_id)
+                dom.button("Submit", type="submit", cls="btn btn-primary")
+                with dom.div(id="spinner", cls="htmx-indicator"):
+                    dom.div(cls="spinner-border text-primary", role="status")
+                    dom.span("Loading...", cls="visually-hidden")
     return HTMLResponse(doc.render())
 
 
@@ -328,11 +397,18 @@ async def add_comment(
     comment: str = Form(),
     user_id: str = Form(""),
     llm_model: str = Cookie(default=DEFAULT_MODEL),
+    system_prompt: str = Cookie(default=DEFAULT_PROMPT),
 ):
     with _init_db() as db:
         topic = _fetch_topic(db, topic_id=topic_id)
         parents = _fetch_parents(db, parent_id)
-        refinement: Refinement = _refine_comment(llm_model, topic, comment, parents)
+        refinement: Refinement = _refine_comment(
+            model=llm_model,
+            system_prompt=system_prompt,
+            topic=topic,
+            comment=comment,
+            parents=parents,
+        )
         if refinement.status == "ok":
             comment = Comment(
                 topic_id=topic_id,
@@ -350,6 +426,7 @@ async def add_comment(
 async def topic(topic_id: int):
     with _init_db() as db:
         topic = _fetch_topic(db, topic_id)
+        page = PageTemplate(f"LLM Experiments -- {topic.title}")
         cursor = db.execute("SELECT * FROM comments WHERE topic_id=?", [topic_id])
         col_names = [c[0] for c in cursor.description]
         comments = [
@@ -376,16 +453,14 @@ async def topic(topic_id: int):
                 cdict[comment.parent_id].children.append(tree)
             else:
                 cdict[comment.parent_id] = CommentTree(children=[tree])
-
-        doc = Page("LLM Experiments")
-        with doc:
-            h2(topic.title)
-            a(topic.url, href=topic.url, cls="link")
-            i(topic.description)
-            hr()
-            _comments(root)
+        with page.body:
+            dom.h2(topic.title)
+            dom.a(topic.url, href=topic.url, cls="link")
+            dom.i(topic.description)
+            dom.hr()
+            _comments(root, depth=0)
             comment_box(topic_id, topic_id, -1, comment="")
-        return HTMLResponse(doc.render())
+    return HTMLResponse(page.render())
 
 
 @app.get("/topic/new", response_class=RedirectResponse)
@@ -396,50 +471,101 @@ async def new_topic(topic_url: str, topic_description: str):
 
 
 @app.post("/settings/save", response_class=RedirectResponse)
-async def save_settings(new_model: str = Form(...)):
+async def save_settings(
+    new_model: str = Form(...),
+    prompt_type: str = Form(...),
+    new_prompt: str = Form(...)
+):
     response = RedirectResponse(url="/settings?status=success", status_code=303)
     response.set_cookie(key="llm_model", value=new_model)
+    response.set_cookie(key="prompt_type", value=prompt_type)
+    response.set_cookie(key="system_prompt", value=new_prompt)
+    return response
+
+@app.get("/settings/reset_prompt", response_class=RedirectResponse)
+async def reset_prompt():
+    response = RedirectResponse(url="/settings?status=prompt_reset", status_code=303)
+    response.set_cookie(key="prompt_type", value="socrates")
+    response.set_cookie(key="system_prompt", value=PROMPTS["socrates"])
     return response
 
 
-@app.get("/settings", response_class=HTMLResponse)
-async def settings(llm_model: str = Cookie(default=""), status: str = None):
-    doc = Page("LLM Experiments - Settings")
-    with doc:
-        with form(method="post", action="/settings/save"):
-            with div():
-                label("LLM Model:")
-                with select(name="new_model"):
-                    for m in MODELS:
-                        option(m, value=m, selected=(m == llm_model))
-                br()
-                input_(type="submit", value="Save")
+@app.get("/settings")
+async def settings(
+    llm_model: str = Cookie(default=""),
+    system_prompt: str = Cookie(default=DEFAULT_PROMPT),
+    prompt_type: str = Cookie(default="socrates"),
+    status: str = None,
+):
+    page = PageTemplate("Settings")
+    with page.body:
+        dom.h1("Settings", cls="mb-4")
         if status:
-            div(status, cls="alert alert-success")
-    return HTMLResponse(doc.render())
+            dom.div(status, cls="alert alert-success mb-4")
+        with dom.form(method="post", action="/settings/save", cls="mb-4"):
+            with dom.div(cls="mb-3"):
+                dom.label("LLM Model", cls="form-label", for_="new_model")
+                with dom.select(name="new_model", id="new_model", cls="form-select"):
+                    for m in MODELS:
+                        dom.option(m, value=m, selected=(m == llm_model))
+            with dom.div(cls="mb-3"):
+                dom.label("Prompt Type", cls="form-label", for_="prompt_type")
+                with dom.select(
+                    name="prompt_type",
+                    id="prompt_type",
+                    cls="form-select",
+                    **{
+                        "hx-get": "/settings/get_prompt",
+                        "hx-target": "#new_prompt",
+                        "hx-trigger": "change",
+                        "hx-swap": "outerHTML",
+                    },
+                ):
+                    for pt in PROMPTS.keys():
+                        dom.option(pt.capitalize(), value=pt, selected=(pt == prompt_type))
+            with dom.div(cls="mb-3"):
+                dom.label("System Prompt", cls="form-label", for_="new_prompt")
+                dom.textarea(system_prompt, name="new_prompt", id="new_prompt", cls="form-control", rows="10")
+            with dom.div(cls="d-flex justify-content-between"):
+                dom.a("Reset to Default", href="/settings/reset_prompt", cls="btn btn-secondary")
+                dom.button("Save Changes", type="submit", cls="btn btn-primary")
+    return HTMLResponse(page.render())
+
+@app.get("/settings/get_prompt")
+async def get_prompt(prompt_type: str):
+    prompt = PROMPTS.get(prompt_type, DEFAULT_PROMPT)
+    return HTMLResponse(
+        dom.textarea(
+            dominate.util.raw(prompt),
+            name="new_prompt",
+            id="new_prompt",
+            cls="form-control",
+            rows="10",
+        ).render()
+    )
 
 
-@app.get("/", response_class=HTMLResponse)
+@app.get("/")
 async def index():
+    page = PageTemplate("LLM Experiments")
     with _init_db() as db:
         cursor = db.execute("SELECT id, title FROM topics")
         topics = cursor.fetchall()
 
-    doc = Page("LLM Experiments")
-    with doc:
-        h2("Can LLMs Make Us Better People?")
-        p("""
-An experiment in using LLMs to help us respond better to each other. This is a simple mirror
-of Hacker News which uses an LLM to gently guide comments to ensure they are respectful and
-contribute to the conversation.
+    with page.body:
+        dom.h2("Can LLMs Make Us Better People?")
+        dom.p("""
+  An experiment in using LLMs to help us respond better to each other. This is a simple mirror
+  of Hacker News which uses an LLM to gently guide comments to ensure they are respectful and
+  contribute to the conversation.
 
-You can play with using different LLMs as arbiters (some are better at following instructions)
-and adjusting the system prompt yourself.
-  """)
-        with ul():
+  You can play with using different LLMs as arbiters (some are better at following instructions)
+  and adjusting the system prompt yourself.
+      """)
+        with dom.ul():
             for id, title in topics:
-                li(a(title, cls="link", href=f"/topic/{id}"))
-    return HTMLResponse(doc.render())
+                dom.li(dom.a(title, cls="link", href=f"/topic/{id}"))
+    return HTMLResponse(page.render())
 
 
 if __name__ == "__main__":
