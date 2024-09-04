@@ -1,0 +1,13 @@
+services:
+  app:
+    build: .
+    ports:
+      - "80:8000"
+    environment:
+      SECRETS_PATH: /run/secrets/api_keys
+    secrets:
+      - api_keys
+
+secrets:
+  api_keys:
+    file: .env

@@ -1,0 +1,45 @@
+# Python cache files
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environment
+.venv
+
+# secrets
+.env
+
+# UV specific
+.uv/
+uv.lock
+
+# Development and IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Git related
+.git
+.gitignore
+
+# Logs
+*.log
+
+# Test files
+tests/
+.pytest_cache/
+
+# Documentation
+docs/
+*.md
+
+# Build artifacts
+*.egg-info/
+dist/
+build/
+
+# Other unnecessary files for Docker
+Dockerfile
+.dockerignore

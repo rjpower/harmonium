@@ -1,6 +1,7 @@
 import json
 import sqlite3
 import typing
+import dotenv
 import openai
 import os
 import pydantic
@@ -13,15 +14,23 @@ from fastapi import FastAPI, Form, Cookie, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-import dotenv
-
-dotenv.load_dotenv()
-
 # gets API Key from environment variable OPENAI_API_KEY
-client = openai.OpenAI(
-    base_url="https://openrouter.ai/api/v1",
-    api_key=os.getenv("OPENROUTER_API_KEY"),
-)
+CLIENT = None
+
+
+def llm_client():
+    global CLIENT
+    if CLIENT is not None:
+        return CLIENT
+
+    dotenv.load_dotenv(dotenv_path=os.environ.get("SECRETS_PATH"))
+
+    CLIENT = openai.OpenAI(
+        base_url="https://openrouter.ai/api/v1",
+        api_key=os.getenv("OPENROUTER_API_KEY"),
+    )
+    return CLIENT
+
 
 MODELS = set(
     [
@@ -33,15 +42,16 @@ MODELS = set(
 DEFAULT_MODEL = "meta-llama/llama-3.1-405b-instruct"
 
 PROMPTS = {
-    "socrates": """You are a Socratic agent dedicated to improving the quality of commentary on the internet. 
+    "socrates": """You are a Socratic agent dedicated to improving the quality of feedback on the internet. 
 
 Given a user's internet comment and context, determine whether the comment adds value to the discussion so far. 
 Only accept contributions that show humility and a broad knowledge about the issue at hand.
 Output only JSON.
 If the comment is ready for submission, reply with {"status": "ok"}
-If the comment needs revision, suggest a revision and reply with {
+If the comment needs revision, provide feedback and a suggested alternative version in the following format:
+{
   "status": "notready",
-  "commentary": "<context on why the comment needs more work>",
+  "feedback": "<context on why the comment needs more work>",
   "revision": "<proposed replacement for the comment>",
 }
 """,
@@ -50,11 +60,11 @@ If the comment needs revision, suggest a revision and reply with {
 Given a user's internet comment and context, modify the comment to be more provocative and less respectful.
 Output only JSON.
 If the comment is sufficiently uncivil, reply with {"status": "ok"}
-Always reply with a modified version of the comment using this format:
+If the comment needs revision, provide feedback and a suggested alternative version in the following format:
 {
   "status": "notready",
-  "commentary": "<explanation of how the comment was made less civil>",
-  "revision": "<modified version of the comment>",
+  "feedback": "<context on why the comment needs more work>",
+  "revision": "<proposed replacement for the comment>",
 }
 """,
     "foreigner": """You are an agent that adjusts comments to sound like they were written by a non-native speaker.
@@ -62,10 +72,10 @@ Always reply with a modified version of the comment using this format:
 Given a user's internet comment, modify the comment to include common grammatical mistakes and word choices typical of non-native speakers.
 Output only JSON.
 If the comment is sufficiently ungrammatical, reply with {"status": "ok"}
-Always reply with a modified version of the comment using this format:
+If the comment needs revision, provide feedback and a suggested alternative version in the following format:
 {
   "status": "notready",
-  "commentary": "<explanation of the changes made to sound like a non-native speaker>",
+  "feedback": "<explanation of how the comment was made less civil>",
   "revision": "<modified version of the comment>",
 }
 """,
@@ -104,7 +114,8 @@ class CommentTree(pydantic.BaseModel):
 class Refinement(pydantic.BaseModel):
     status: str
     refinement: str
-    commentary: str
+    feedback: str
+    error: typing.Optional[str] = None
 
 
 STYLES = {"refinement": "color: green"}
@@ -116,51 +127,60 @@ def _refine_comment(
     topic: Topic,
     comment: str,
     parents: typing.List[Comment],
-) -> str:
-    print(
-        "Refine:",
-        {
-            "model": model,
-            "system_prompt": system_prompt,
-            "topic": topic,
-            "comment": comment,
-            "parents": parents,
-        },
-    )
-    parent_prompt = [
-        {
-            "role": "system",
-            "content": f"A previous comment in the discussion: \n {comment.comment}",
-        }
-        for comment in parents
-    ]
-    completion = client.chat.completions.create(
-        model=model,
-        messages=[
+) -> Refinement:
+    try:
+        print(
+            "Refine:",
+            {
+                "model": model,
+                "system_prompt": system_prompt,
+                "topic": topic,
+                "comment": comment,
+                "parents": parents,
+            },
+        )
+        parent_prompt = [
             {
                 "role": "system",
-                "content": system_prompt,
-            },
-            {
-                "role": "system",
-                "content": f"The topic being discussed:\n {topic.description}",
-            },
-            *parent_prompt,
-            {
-                "role": "user",
-                "content": comment,
-            },
-        ],
-        response_format={"type": "json_object"},
-    )
-    content = completion.choices[0].message.content
-    content = json.loads(content)
-    print(content)
-    return Refinement(
-        status=content.get("status", "ok"),
-        refinement=content.get("revision", ""),
-        commentary=content.get("commentary", ""),
-    )
+                "content": f"A previous comment in the discussion: \n {comment.comment}",
+            }
+            for comment in parents
+        ]
+        completion = llm_client().chat.completions.create(
+            model=model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": system_prompt,
+                },
+                {
+                    "role": "system",
+                    "content": f"The topic being discussed:\n {topic.description}",
+                },
+                *parent_prompt,
+                {
+                    "role": "user",
+                    "content": comment,
+                },
+            ],
+            response_format={"type": "json_object"},
+        )
+        content = completion.choices[0].message.content
+        content = json.loads(content)
+        print(content)
+        return Refinement(
+            status=content.get("status", "ok"),
+            refinement=content.get("revision", ""),
+            feedback=content.get("feedback", ""),
+        )
+    except Exception as e:
+        print(f"Error in _refine_comment: {str(e)}")
+        return Refinement(
+            status="error",
+            refinement="",
+            feedback="",
+            error=f"An error occurred while processing your comment: {str(e)}",
+        )
 
 
 def _init_db(db_file="data/comments.db"):
@@ -273,14 +293,6 @@ def Alert(message: str, type: str):
     )
 
 
-def Ul(*args, **kw):
-    return dom.ul(*args, **kw)
-
-
-def Li(*args, **kw):
-    return dom.li(*args, **kw)
-
-
 class PageTemplate:
     def __init__(self, title_text: str):
         self.doc = dominate.document(title=title_text)
@@ -290,7 +302,8 @@ class PageTemplate:
             dom.script(src="/static/bootstrap.min.js")
             dom.script(src="/static/htmx.min.js")
             dom.link(rel="stylesheet", href="/static/bootstrap.min.css")
-            dom.style("""
+            dom.style(
+                """
                 .htmx-indicator {
                     display: none;
                 }
@@ -300,7 +313,8 @@ class PageTemplate:
                 .htmx-request.htmx-indicator {
                     display: inline-block;
                 }
-            """)
+            """
+            )
 
         with self.doc:
             with dom.body(cls="d-flex flex-column min-vh-100"):
@@ -340,22 +354,42 @@ def _comment(comment: Comment):
 def _comments(tree: typing.Optional[CommentTree], depth: int = 0):
     if tree is None:
         return dom.div(dom.i("No comments yet. Add your ideas!"))
-    
+
     bg_class = "bg-light" if depth % 2 == 0 else "bg-white"
-    ul_element = dom.ul(cls=f"list-unstyled {bg_class} p-3 border rounded" if depth != 0 else "list-unstyled")
-    
+    ul_element = dom.ul(
+        cls=(
+            f"list-unstyled {bg_class} p-3 border rounded"
+            if depth != 0
+            else "list-unstyled"
+        )
+    )
+
     if tree.comment:
         ul_element.add(_comment(tree.comment))
-    
+
     for child in tree.children:
         ul_element.add(_comments(child, depth + 1))
-    
+
     return ul_element
 
 
 app = FastAPI()
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
+
+@app.get("/topic/comment")
+def comment(topic_id: int, parent_id: int, loc: int):
+    return HTMLResponse(
+        dom.a(
+            "Reply",
+            cls="link",
+            **{
+                "hx-get": f"/topic/comment_box?topic_id={topic_id}&parent_id={parent_id}&loc={loc}",
+                "hx-swap": "outerHTML",
+            },
+        ).render()
+    )
 
 
 @app.get("/topic/comment_box", response_class=HTMLResponse)
@@ -370,7 +404,9 @@ def comment_box(
         if refinement:
             comment = refinement.refinement
             with dom.div(style=STYLES.get("refinement", "")):
-                dom.i(refinement.commentary)
+                dom.i(refinement.feedback)
+            if refinement.error:
+                Alert(refinement.error, type="error")
         with dom.form(
             cls="comment-form",
             **{
@@ -383,7 +419,18 @@ def comment_box(
                 dom.textarea(comment, name="comment", cls="form-control", rows="5")
                 dom.input_(type="hidden", name="topic_id", value=topic_id)
                 dom.input_(type="hidden", name="parent_id", value=parent_id)
-                dom.button("Submit", type="submit", cls="btn btn-primary")
+                with dom.div(cls="mt-2"):
+                    dom.button("Submit", type="submit", cls="btn btn-primary me-2")
+                    dom.a(
+                        "Cancel",
+                        href="#",
+                        cls="btn btn-secondary",
+                        **{
+                            "hx-get": f"/topic/comment?topic_id={topic_id}&parent_id={parent_id}&loc={loc}",
+                            "hx-target": f"#comment-{parent_id}-{loc}",
+                            "hx-swap": "outerHTML",
+                        }
+                    )
                 with dom.div(id="spinner", cls="htmx-indicator"):
                     dom.div(cls="spinner-border text-primary", role="status")
                     dom.span("Loading...", cls="visually-hidden")
@@ -474,13 +521,14 @@ async def new_topic(topic_url: str, topic_description: str):
 async def save_settings(
     new_model: str = Form(...),
     prompt_type: str = Form(...),
-    new_prompt: str = Form(...)
+    new_prompt: str = Form(...),
 ):
     response = RedirectResponse(url="/settings?status=success", status_code=303)
     response.set_cookie(key="llm_model", value=new_model)
     response.set_cookie(key="prompt_type", value=prompt_type)
     response.set_cookie(key="system_prompt", value=new_prompt)
     return response
+
 
 @app.get("/settings/reset_prompt", response_class=RedirectResponse)
 async def reset_prompt():
@@ -522,14 +570,27 @@ async def settings(
                     },
                 ):
                     for pt in PROMPTS.keys():
-                        dom.option(pt.capitalize(), value=pt, selected=(pt == prompt_type))
+                        dom.option(
+                            pt.capitalize(), value=pt, selected=(pt == prompt_type)
+                        )
             with dom.div(cls="mb-3"):
                 dom.label("System Prompt", cls="form-label", for_="new_prompt")
-                dom.textarea(system_prompt, name="new_prompt", id="new_prompt", cls="form-control", rows="10")
+                dom.textarea(
+                    system_prompt,
+                    name="new_prompt",
+                    id="new_prompt",
+                    cls="form-control",
+                    rows="10",
+                )
             with dom.div(cls="d-flex justify-content-between"):
-                dom.a("Reset to Default", href="/settings/reset_prompt", cls="btn btn-secondary")
+                dom.a(
+                    "Reset to Default",
+                    href="/settings/reset_prompt",
+                    cls="btn btn-secondary",
+                )
                 dom.button("Save Changes", type="submit", cls="btn btn-primary")
     return HTMLResponse(page.render())
+
 
 @app.get("/settings/get_prompt")
 async def get_prompt(prompt_type: str):
@@ -554,24 +615,17 @@ async def index():
 
     with page.body:
         dom.h2("Can LLMs Make Us Better People?")
-        dom.p("""
+        dom.p(
+            """
   An experiment in using LLMs to help us respond better to each other. This is a simple mirror
   of Hacker News which uses an LLM to gently guide comments to ensure they are respectful and
   contribute to the conversation.
 
   You can play with using different LLMs as arbiters (some are better at following instructions)
   and adjusting the system prompt yourself.
-      """)
+      """
+        )
         with dom.ul():
             for id, title in topics:
                 dom.li(dom.a(title, cls="link", href=f"/topic/{id}"))
     return HTMLResponse(page.render())
-
-
-if __name__ == "__main__":
-    with _init_db() as db:
-        _clear_db(db)
-        _insert_dummy_data(db)
-    import uvicorn
-
-    uvicorn.run(app, host="0.0.0.0", port=8000)
