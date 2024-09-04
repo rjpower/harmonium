@@ -1,16 +1,16 @@
 import json
+import os
+import re
 import sqlite3
 import typing
-import dotenv
-import openai
-import os
-import pydantic
-import yaml
-import functools
 
 import dominate
 import dominate.tags as dom
-from fastapi import FastAPI, Form, Cookie, Response
+import dotenv
+import openai
+import pydantic
+import yaml
+from fastapi import Cookie, FastAPI, Form, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -116,10 +116,6 @@ class Refinement(pydantic.BaseModel):
     refinement: str
     feedback: str
     error: typing.Optional[str] = None
-
-
-STYLES = {"refinement": "color: green"}
-
 
 def _refine_comment(
     model: str,
@@ -304,16 +300,44 @@ class PageTemplate:
             dom.link(rel="stylesheet", href="/static/bootstrap.min.css")
             dom.style(
                 """
-                .htmx-indicator {
-                    display: none;
-                }
-                .htmx-request .htmx-indicator {
-                    display: inline-block;
-                }
-                .htmx-request.htmx-indicator {
-                    display: inline-block;
-                }
-            """
+.comment-thread {
+  border-left: 2px solid #007bff;
+  padding-left: 15px;
+  margin-left: 15px;
+}
+
+.comment {
+  margin-bottom: 15px;
+  padding: 10px;
+  background-color: #f8f9fa;
+  border-radius: 5px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24);
+}
+
+.commenter-name {
+  font-weight: bold;
+  color: #007bff;
+  margin-bottom: 5px;
+}
+
+.refinement {
+   color: #28a745;
+   font-style: italic;
+   margin-top: 5px;
+}
+
+htmx-indicator {
+   display: none;
+}
+
+htmx-request .htmx-indicator {
+   display: inline-block;
+}
+
+htmx-request.htmx-indicator {
+   display: inline-block;
+}
+"""
             )
 
         with self.doc:
@@ -337,9 +361,9 @@ class PageTemplate:
 
 def _comment(comment: Comment):
     return dom.li(
-        dominate.util.raw(comment.comment),
+        dominate.util.raw(hacker_news_to_html(comment.comment)),
         dom.br(),
-        dom.i(comment.user_id),
+        dom.i(f"-- {comment.user_id}"),
         dom.a(
             "Reply",
             cls="link",
@@ -348,6 +372,7 @@ def _comment(comment: Comment):
                 "hx-swap": "outerHTML",
             },
         ),
+        cls="comment",
     )
 
 
@@ -355,14 +380,7 @@ def _comments(tree: typing.Optional[CommentTree], depth: int = 0):
     if tree is None:
         return dom.div(dom.i("No comments yet. Add your ideas!"))
 
-    bg_class = "bg-light" if depth % 2 == 0 else "bg-white"
-    ul_element = dom.ul(
-        cls=(
-            f"list-unstyled {bg_class} p-3 border rounded"
-            if depth != 0
-            else "list-unstyled"
-        )
-    )
+    ul_element = dom.ul(cls="list-unstyled " + "comment-thread" if depth > 0 else "")
 
     if tree.comment:
         ul_element.add(_comment(tree.comment))
@@ -403,7 +421,7 @@ def comment_box(
     with dom.div(id=f"comment-{parent_id}-{loc}") as doc:
         if refinement:
             comment = refinement.refinement
-            with dom.div(style=STYLES.get("refinement", "")):
+            with dom.div(cls="refinement"):
                 dom.i(refinement.feedback)
             if refinement.error:
                 Alert(refinement.error, type="error")
@@ -469,6 +487,19 @@ async def add_comment(
             return comment_box(topic_id, parent_id, -1, comment, refinement=refinement)
 
 
+def hacker_news_to_html(text):
+    """Converts a Hacker News formatted string into HTML."""
+    text = re.sub(r"\|(https?://\S+)", r'</a><a href="\1">\1', text)
+    text = text.replace("\n\n", "</p><p>")
+    text = text.replace("\n", "<br>")
+    text = re.sub(r"^- ", r"<li>", text)
+    text = re.sub(r"(?<!</li>)\n(?=- )", r"</li>\n", text)
+    text = re.sub(r"\[(\d+)\]", r"<sup>[\1]</sup>", text)
+    text = text.replace("--------------", "<hr>")
+    text = text.replace("&#x27;", "'")
+    return text
+
+
 @app.get("/topic/{topic_id}", response_class=HTMLResponse)
 async def topic(topic_id: int):
     with _init_db() as db:
@@ -502,9 +533,12 @@ async def topic(topic_id: int):
                 cdict[comment.parent_id] = CommentTree(children=[tree])
         with page.body:
             dom.h2(topic.title)
-            dom.a(topic.url, href=topic.url, cls="link")
-            dom.i(topic.description)
-            dom.hr()
+            if topic.url:
+                dom.a(topic.url, href=topic.url, cls="link")
+                dom.hr()
+            if topic.description:
+                dom.i(dominate.util.raw(hacker_news_to_html(topic.description)))
+                dom.hr()
             _comments(root, depth=0)
             comment_box(topic_id, topic_id, -1, comment="")
     return HTMLResponse(page.render())

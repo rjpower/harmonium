@@ -10,12 +10,12 @@ authors = [{ name = "Russell Power", email = "russell.power@gmail.com" }]
 dependencies = [
     "PyYAML",
     "dominate",
-    "openai",
+    "fastapi",
     "itsdangerous",
+    "openai",
     "python-dotenv",
     "python-multipart",
     "requests",
-    "fastapi",
     "uvicorn",
 ]
 
