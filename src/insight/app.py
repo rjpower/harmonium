@@ -22,6 +22,8 @@ MODELS = set(
         "anthropic/claude-3-sonnet",
         "anthropic/claude-3-opus",
         "meta-llama/llama-3.1-405b-instruct",
+        "openai/gpt-4o",
+        "openai/gpt-4o-mini",
     ]
 )
 DEFAULT_MODEL = "meta-llama/llama-3.1-405b-instruct"
@@ -69,7 +71,7 @@ If the comment needs revision, provide feedback and a suggested alternative vers
 DEFAULT_PROMPT = PROMPTS["socrates"]
 
 
-def _refine_comment(
+def refine_comment(
     client: openai.OpenAI,
     model: str,
     system_prompt: str,
@@ -114,16 +116,16 @@ def _refine_comment(
             ],
             response_format={"type": "json_object"},
         )
+        print(completion)
         content = completion.choices[0].message.content
         content = json.loads(content)
-        print(content)
-        return Refinement(
+        result = Refinement(
             status=content.get("status", "ok"),
             refinement=content.get("revision", ""),
             feedback=content.get("feedback", ""),
         )
+        return result
     except Exception as e:
-        print(f"Error in _refine_comment: {str(e)}")
         return Refinement(
             status="error",
             refinement="",
@@ -245,16 +247,18 @@ def _comments(tree: typing.Optional[CommentTree], depth: int = 0):
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.db = DB(
-        db_host=os.getenv("DB_HOST", "localhost"),
-        user=os.getenv("DB_USER"),
-        password=os.getenv("DB_PASS"),
+        database=os.getenv("DB_NAME", None),
+        db_type=os.getenv("DB_TYPE", None),
+        user=os.getenv("DB_USER", None),
+        password=os.getenv("DB_PASS", None),
+        db_host=os.getenv("DB_HOST", None),
+        db_port=os.getenv("DB_PORT", None),
     )
     app.state.llm_client = openai.OpenAI(
         base_url="https://openrouter.ai/api/v1",
         api_key=os.getenv("OPENROUTER_API_KEY"),
     )
     yield
-    app.state.db.close()
 
 
 app = FastAPI(lifespan=lifespan)
@@ -341,7 +345,7 @@ async def add_comment(
     db = request.state.db
     topic = db.fetch_topic(topic_id=topic_id)
     parents = db.fetch_parents(parent_id)
-    refinement: Refinement = _refine_comment(
+    refinement: Refinement = refine_comment(
         client=request.state.llm_client,
         model=llm_model,
         system_prompt=system_prompt,
@@ -403,8 +407,9 @@ def _build_tree(comments: typing.List[Comment], topic_id: int):
 async def topic(request: Request, topic_id: int):
     db = request.state.db
     topic = db.fetch_topic(topic_id)
-    page = PageTemplate(f"LLM Experiments -- {topic.title}")
     comments = db.fetch_comments(topic_id)
+
+    page = PageTemplate(f"LLM Experiments -- {topic.title}")
     comment_tree = _build_tree(comments, topic_id)
 
     with page.body:

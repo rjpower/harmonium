@@ -16,6 +16,7 @@ dependencies = [
     "openai",
     "python-dotenv",
     "python-multipart",
+    "sqlalchemy",
     "requests",
     "uvicorn",
 ]

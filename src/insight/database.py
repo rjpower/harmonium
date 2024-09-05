@@ -1,8 +1,11 @@
 import typing
+from typing import List, Optional
 import pydantic
 import tqdm
 import yaml
-import psycopg2
+from sqlalchemy import create_engine, MetaData, Table, Column, Integer, String, Text, ForeignKey
+from sqlalchemy.sql import select, insert
+from sqlalchemy.exc import SQLAlchemyError
 
 
 class User(pydantic.BaseModel):
@@ -13,14 +16,14 @@ class User(pydantic.BaseModel):
 
 
 class Topic(pydantic.BaseModel):
-    id: typing.Optional[int] = None
+    id: Optional[int] = None
     url: str
     title: str
     description: str
 
 
 class Comment(pydantic.BaseModel):
-    id: typing.Optional[int] = None
+    id: Optional[int] = None
     topic_id: int
     user_id: str | int
     parent_id: int
@@ -28,178 +31,149 @@ class Comment(pydantic.BaseModel):
 
 
 class CommentTree(pydantic.BaseModel):
-    comment: typing.Optional[Comment] = None
-    children: "typing.List[CommentTree]" = []
+    comment: Optional[Comment] = None
+    children: "List[CommentTree]" = []
 
 
 class Refinement(pydantic.BaseModel):
     status: str
     refinement: str
     feedback: str
-    error: typing.Optional[str] = None
+    error: Optional[str] = None
 
 
 class DB:
 
     def __init__(
         self,
-        user: str,
-        password: str,
-        db_host: str = "localhost",
-        db_port: int = 5432,
-        database: str = "harmonium",
+        user: str | None = None,
+        password: str | None = None,
+        database: str | None = None,
+        db_type: str | None = None,
+        db_host: str | None = None,
+        db_port: int | None = None,
     ):
-        self.conn = psycopg2.connect(
-            host=db_host, port=db_port, database=database, user=user, password=password
+        self.database = database or "harmonium"
+        self.db_type = db_type or "sqlite"
+        self.user = user
+        self.password = password
+        self.db_host = db_host or "localhost"
+        self.db_port = db_port or 5432
+        self.engine = self._create_engine()
+        self.metadata = MetaData()
+        self._define_tables()
+
+    def _create_engine(self):
+        if self.db_type == "sqlite":
+            return create_engine(f"sqlite:///{self.database}")
+        elif self.db_type == "postgres":
+            return create_engine(f"postgresql://{self.user}:{self.password}@{self.db_host}:{self.db_port}/{self.database}")
+        else:
+            raise ValueError("Unsupported database type")
+
+    def _define_tables(self):
+        self.comments = Table(
+            "comments",
+            self.metadata,
+            Column("id", Integer, primary_key=True),
+            Column("topic_id", Integer, ForeignKey("topics.id")),
+            Column("user_id", String),
+            Column("parent_id", Integer),
+            Column("comment", Text),
         )
 
-    def close(self):
-        if self.conn:
-            self.conn.close()
+        self.topics = Table(
+            "topics",
+            self.metadata,
+            Column("id", Integer, primary_key=True),
+            Column("title", String),
+            Column("url", String),
+            Column("description", Text),
+        )
+
+        self.users = Table(
+            "users",
+            self.metadata,
+            Column("id", Integer, primary_key=True),
+            Column("username", String),
+            Column("password", String),
+        )
 
     def setup(self):
-        with self.conn.cursor() as cur:
-            cur.execute(
-                """
-                CREATE TABLE IF NOT EXISTS comments (
-                    id SERIAL PRIMARY KEY,
-                    topic_id INTEGER,
-                    user_id VARCHAR,
-                    parent_id INTEGER,
-                    comment TEXT
-                )
-                """
-            )
-            cur.execute(
-                """
-                CREATE TABLE IF NOT EXISTS topics (
-                    id SERIAL PRIMARY KEY,
-                    title VARCHAR,
-                    url VARCHAR,
-                    description TEXT
-                )
-                """
-            )
-            cur.execute(
-                """
-                CREATE TABLE IF NOT EXISTS users (
-                    id SERIAL PRIMARY KEY,
-                    username VARCHAR,
-                    password VARCHAR
-                )
-                """
-            )
-        self.conn.commit()
+        self.metadata.create_all(self.engine)
 
     def clear(self):
-        with self.conn.cursor() as cur:
-            cur.execute("DELETE FROM comments")
-            cur.execute("DELETE FROM topics")
-            cur.execute("DELETE FROM users")
-        self.conn.commit()
+        self.metadata.drop_all(self.engine)
 
     def insert_dummy_data(self):
         with open("data/ycombinator.yaml", "r") as f:
             docs = yaml.safe_load(f)
-            for topic in tqdm.tqdm(docs["topics"]):
-                self.insert_topic(Topic(**topic))
-            for comment in tqdm.tqdm(docs["comments"]):
-                self.insert_comment(Comment(**comment))
+            with self.engine.begin() as conn:
+                for topic in tqdm.tqdm(docs["topics"]):
+                    self.insert_topic(conn, Topic(**topic))
+                for comment in tqdm.tqdm(docs["comments"]):
+                    self.insert_comment(conn, Comment(**comment))
 
-    def insert_comment(self, comment: Comment):
-        with self.conn.cursor() as cur:
-            if comment.id is None:
-                cur.execute(
-                    """
-                    INSERT INTO comments (topic_id, user_id, parent_id, comment)
-                    VALUES (%s, %s, %s, %s)
-                    """,
-                    (
-                        comment.topic_id,
-                        comment.user_id,
-                        comment.parent_id,
-                        comment.comment,
-                    ),
-                )
-            else:
-                cur.execute(
-                    """
-                    INSERT INTO comments (id, topic_id, user_id, parent_id, comment)
-                    VALUES (%s, %s, %s, %s, %s)
-                    """,
-                    (
-                        comment.id,
-                        comment.topic_id,
-                        comment.user_id,
-                        comment.parent_id,
-                        comment.comment,
-                    ),
-                )
-        self.conn.commit()
+    def insert_comment(self, conn, comment: Comment):
+        stmt = insert(self.comments).values(
+            topic_id=comment.topic_id,
+            user_id=comment.user_id,
+            parent_id=comment.parent_id,
+            comment=comment.comment,
+        )
+        if comment.id is not None:
+            stmt = stmt.values(id=comment.id)
+        result = conn.execute(stmt)
+        comment.id = result.inserted_primary_key[0]
+        return comment
 
-    def insert_topic(self, topic: Topic):
-        with self.conn.cursor() as cur:
-            if topic.id is None:
-                cur.execute(
-                    """
-                    INSERT INTO topics (title, url, description)
-                    VALUES (%s, %s, %s)
-                    RETURNING id
-                    """,
-                    (topic.title, topic.url, topic.description),
-                )
-                topic_id = cur.fetchone()[0]
-                topic = topic.model_copy(update={"id": topic_id})
-            else:
-                cur.execute(
-                    """
-                    INSERT INTO topics (id, title, url, description)
-                    VALUES (%s, %s, %s, %s)
-                    """,
-                    (topic.id, topic.title, topic.url, topic.description),
-                )
-        self.conn.commit()
+    def insert_topic(self, conn, topic: Topic):
+        stmt = insert(self.topics).values(
+            title=topic.title,
+            url=topic.url,
+            description=topic.description,
+        )
+        if topic.id is not None:
+            stmt = stmt.values(id=topic.id)
+        result = conn.execute(stmt)
+        topic.id = result.inserted_primary_key[0]
         return topic
 
     def fetch_topic(self, topic_id: int):
-        with self.conn.cursor() as cur:
-            cur.execute("SELECT * FROM topics WHERE id = %s", (topic_id,))
-            col_names = [desc[0] for desc in cur.description]
-            values = cur.fetchone()
-            if values:
-                args = dict(zip(col_names, values))
-                return Topic(**args)
+        with self.engine.connect() as conn:
+            stmt = select(self.topics).where(self.topics.c.id == topic_id)
+            cols = stmt.columns.keys()
+            result = conn.execute(stmt).fetchone()
+            if result:
+                return Topic(**dict(zip(cols, result)))
         return None
 
     def fetch_comments(self, topic_id: int):
-        comments = []
-        with self.conn.cursor() as cur:
-            cur.execute("SELECT * FROM comments WHERE topic_id = %s", (topic_id,))
-            col_names = [desc[0] for desc in cur.description]
-            rows = cur.fetchall()
-            for row in rows:
-                comments.append(Comment(**dict(zip(col_names, row))))
-        return comments
+        with self.engine.connect() as conn:
+            stmt = select(self.comments).where(self.comments.c.topic_id == topic_id)
+            cols = stmt.columns.keys()
+            results = conn.execute(stmt).fetchall()
+            return [Comment(**dict(zip(cols, row))) for row in results]
 
     def fetch_parents(self, comment_id: int):
         comments = []
-        with self.conn.cursor() as cur:
+        with self.engine.connect() as conn:
             while True:
-                cur.execute("SELECT * FROM comments WHERE id = %s", (comment_id,))
-                col_names = [desc[0] for desc in cur.description]
-                values = cur.fetchone()
-                if not values:
+                stmt = select(self.comments).where(self.comments.c.id == comment_id)
+                cols = stmt.columns.keys()
+                result = conn.execute(stmt).fetchone()
+                if not result:
                     break
-                comment = Comment(**dict(zip(col_names, values)))
+                comment = Comment(**dict(zip(cols, result)))
                 comments.append(comment)
                 comment_id = comment.parent_id
         return comments
 
     def fetch_topics(self):
-        topics = []
-        with self.conn.cursor() as cur:
-            cur.execute("SELECT * FROM topics")
-            col_names = [desc[0] for desc in cur.description]
-            for row in cur.fetchall():
-                topics.append(Topic(**dict(zip(col_names, row))))
-        return topics
+        with self.engine.connect() as conn:
+            stmt = select(self.topics)
+            results = conn.execute(stmt).fetchall()
+            cols = stmt.columns.keys()
+
+            print("Results:", results[0])
+            return [Topic(**dict(zip(cols, row))) for row in results]
