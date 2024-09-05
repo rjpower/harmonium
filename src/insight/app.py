@@ -1,36 +1,21 @@
+import contextlib
 import json
 import os
 import re
-import sqlite3
 import typing
 
 import dominate
 import dominate.tags as dom
 import dotenv
 import openai
-import pydantic
 import yaml
-from fastapi import Cookie, FastAPI, Form, Response
+from fastapi import Cookie, FastAPI, Form, Response, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-# gets API Key from environment variable OPENAI_API_KEY
-CLIENT = None
+from insight.database import User, Comment, Topic, DB, CommentTree, Refinement
 
-
-def llm_client():
-    global CLIENT
-    if CLIENT is not None:
-        return CLIENT
-
-    dotenv.load_dotenv(dotenv_path=os.environ.get("SECRETS_PATH"))
-
-    CLIENT = openai.OpenAI(
-        base_url="https://openrouter.ai/api/v1",
-        api_key=os.getenv("OPENROUTER_API_KEY"),
-    )
-    return CLIENT
-
+dotenv.load_dotenv(dotenv_path=os.environ.get("SECRETS_PATH"))
 
 MODELS = set(
     [
@@ -84,40 +69,8 @@ If the comment needs revision, provide feedback and a suggested alternative vers
 DEFAULT_PROMPT = PROMPTS["socrates"]
 
 
-class User(pydantic.BaseModel):
-    user_id: str
-    password: str
-    model: str
-    prompt: str
-
-
-class Topic(pydantic.BaseModel):
-    id: typing.Optional[int] = None
-    url: str
-    title: str
-    description: str
-
-
-class Comment(pydantic.BaseModel):
-    id: typing.Optional[int] = None
-    topic_id: int
-    user_id: str | int
-    parent_id: int
-    comment: str
-
-
-class CommentTree(pydantic.BaseModel):
-    comment: typing.Optional[Comment] = None
-    children: "typing.List[CommentTree]" = []
-
-
-class Refinement(pydantic.BaseModel):
-    status: str
-    refinement: str
-    feedback: str
-    error: typing.Optional[str] = None
-
 def _refine_comment(
+    client: openai.OpenAI,
     model: str,
     system_prompt: str,
     topic: Topic,
@@ -142,7 +95,7 @@ def _refine_comment(
             }
             for comment in parents
         ]
-        completion = llm_client().chat.completions.create(
+        completion = client.chat.completions.create(
             model=model,
             messages=[
                 {
@@ -177,108 +130,6 @@ def _refine_comment(
             feedback="",
             error=f"An error occurred while processing your comment: {str(e)}",
         )
-
-
-def _init_db(db_file="data/comments.db"):
-    db = sqlite3.connect(db_file)
-    db.execute(
-        """CREATE TABLE IF NOT EXISTS comments (
-          id INTEGER PRIMARY KEY, 
-          topic_id INTEGER, 
-          user_id VARCHAR,
-          parent_id INTEGER,
-          comment VARCHAR
-      )"""
-    )
-    db.execute(
-        """CREATE TABLE IF NOT EXISTS topics (
-        id INTEGER PRIMARY KEY,
-        title VARCHAR,
-        url VARCHAR,
-        description VARCHAR
-        )"""
-    )
-    db.execute(
-        """CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY,
-        username VARCHAR,
-        password VARCHAR
-        )"""
-    )
-    return db
-
-
-def _insert_comment(db, comment: Comment):
-    if comment.id is None:
-        db.execute(
-            "INSERT INTO comments (topic_id, user_id, parent_id, comment) VALUES (?, ?, ?, ?)",
-            [comment.topic_id, comment.user_id, comment.parent_id, comment.comment],
-        )
-    else:
-        db.execute(
-            "INSERT INTO comments (id, topic_id, user_id, parent_id, comment) VALUES (?, ?, ?, ?, ?)",
-            [
-                comment.id,
-                comment.topic_id,
-                comment.user_id,
-                comment.parent_id,
-                comment.comment,
-            ],
-        )
-    db.commit()
-
-
-def _insert_topic(db, topic: Topic):
-    if topic.id is None:
-        cursor = db.execute(
-            "INSERT INTO topics (title, url, description) VALUES (?, ?, ?)",
-            [topic.title, topic.url, topic.description],
-        )
-        topic = topic.model_copy(update={"id": cursor.lastrowid})
-    else:
-        cursor = db.execute(
-            "INSERT INTO topics (id, title, url, description) VALUES (?, ?, ?, ?)",
-            [topic.id, topic.title, topic.url, topic.description],
-        )
-    db.commit()
-    return topic
-
-
-def _fetch_topic(db, topic_id: int):
-    cursor = db.execute("SELECT * FROM topics WHERE id=?", [topic_id])
-    col_names = [c[0] for c in cursor.description]
-    values = cursor.fetchone()
-    args = {k: v for (k, v) in zip(col_names, values)}
-    return Topic(**args)
-
-
-def _fetch_parents(db, comment_id: int):
-    comments = []
-    while True:
-        cursor = db.execute("SELECT * FROM comments WHERE id=?", [comment_id])
-        col_names = [c[0] for c in cursor.description]
-        values = cursor.fetchone()
-        if not values:
-            break
-        comment = Comment(**{k: v for (k, v) in zip(col_names, values)})
-        comments.append(comment)
-        comment_id = comment.parent_id
-    return comments
-
-
-def _clear_db(db):
-    db.execute("DELETE FROM comments")
-    db.execute("DELETE FROM topics")
-    db.execute("DELETE FROM users")
-
-
-def _insert_dummy_data(db):
-    with open("data/ycombinator.yaml", "r") as f:
-        docs = yaml.safe_load(f)
-        for topic in docs["topics"]:
-            _insert_topic(db, Topic(**topic))
-        for comment in docs["comments"]:
-            _insert_comment(db, Comment(**comment))
 
 
 def Alert(message: str, type: str):
@@ -391,9 +242,31 @@ def _comments(tree: typing.Optional[CommentTree], depth: int = 0):
     return ul_element
 
 
-app = FastAPI()
+@contextlib.asynccontextmanager
+async def lifespan(app: FastAPI):
+    app.state.db = DB(
+        db_host=os.getenv("DB_HOST", "localhost"),
+        user=os.getenv("DB_USER"),
+        password=os.getenv("DB_PASS"),
+    )
+    app.state.llm_client = openai.OpenAI(
+        base_url="https://openrouter.ai/api/v1",
+        api_key=os.getenv("OPENROUTER_API_KEY"),
+    )
+    yield
+    app.state.db.close()
 
+
+app = FastAPI(lifespan=lifespan)
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
+
+@app.middleware("http")
+async def _inject_dependencies(request: Request, call_next):
+    request.state.db = app.state.db
+    request.state.llm_client = app.state.llm_client
+    response = await call_next(request)
+    return response
 
 
 @app.get("/topic/comment")
@@ -447,7 +320,7 @@ def comment_box(
                             "hx-get": f"/topic/comment?topic_id={topic_id}&parent_id={parent_id}&loc={loc}",
                             "hx-target": f"#comment-{parent_id}-{loc}",
                             "hx-swap": "outerHTML",
-                        }
+                        },
                     )
                 with dom.div(id="spinner", cls="htmx-indicator"):
                     dom.div(cls="spinner-border text-primary", role="status")
@@ -457,6 +330,7 @@ def comment_box(
 
 @app.post("/topic/comment/new", response_class=HTMLResponse)
 async def add_comment(
+    request: Request,
     topic_id: int = Form(),
     parent_id: int = Form(),
     comment: str = Form(),
@@ -464,27 +338,28 @@ async def add_comment(
     llm_model: str = Cookie(default=DEFAULT_MODEL),
     system_prompt: str = Cookie(default=DEFAULT_PROMPT),
 ):
-    with _init_db() as db:
-        topic = _fetch_topic(db, topic_id=topic_id)
-        parents = _fetch_parents(db, parent_id)
-        refinement: Refinement = _refine_comment(
-            model=llm_model,
-            system_prompt=system_prompt,
-            topic=topic,
+    db = request.state.db
+    topic = db.fetch_topic(topic_id=topic_id)
+    parents = db.fetch_parents(parent_id)
+    refinement: Refinement = _refine_comment(
+        client=request.state.llm_client,
+        model=llm_model,
+        system_prompt=system_prompt,
+        topic=topic,
+        comment=comment,
+        parents=parents,
+    )
+    if refinement.status == "ok":
+        comment = Comment(
+            topic_id=topic_id,
+            user_id=user_id,
+            parent_id=parent_id,
             comment=comment,
-            parents=parents,
         )
-        if refinement.status == "ok":
-            comment = Comment(
-                topic_id=topic_id,
-                user_id=user_id,
-                parent_id=parent_id,
-                comment=comment,
-            )
-            _insert_comment(db, comment)
-            return HTMLResponse(_comment(comment).render())
-        else:
-            return comment_box(topic_id, parent_id, -1, comment, refinement=refinement)
+        db.insert_comment(comment)
+        return HTMLResponse(_comment(comment).render())
+    else:
+        return comment_box(topic_id, parent_id, -1, comment, refinement=refinement)
 
 
 def hacker_news_to_html(text):
@@ -500,54 +375,55 @@ def hacker_news_to_html(text):
     return text
 
 
+def _build_tree(comments: typing.List[Comment], topic_id: int):
+    cdict = {}
+    root = CommentTree()
+    cdict[topic_id] = root
+
+    # Create a comment tree for rendering.
+    for comment in comments:
+        if comment.id in cdict:
+            tree = cdict[comment.id]
+            tree.comment = comment
+        else:
+            tree = CommentTree(
+                comment=comment,
+                children=[],
+            )
+            cdict[comment.id] = tree
+
+        if comment.parent_id in cdict:
+            cdict[comment.parent_id].children.append(tree)
+        else:
+            cdict[comment.parent_id] = CommentTree(children=[tree])
+    return root
+
+
 @app.get("/topic/{topic_id}", response_class=HTMLResponse)
-async def topic(topic_id: int):
-    with _init_db() as db:
-        topic = _fetch_topic(db, topic_id)
-        page = PageTemplate(f"LLM Experiments -- {topic.title}")
-        cursor = db.execute("SELECT * FROM comments WHERE topic_id=?", [topic_id])
-        col_names = [c[0] for c in cursor.description]
-        comments = [
-            Comment(**{k: v for (k, v) in zip(col_names, values)})
-            for values in cursor.fetchall()
-        ]
-        cdict = {}
-        root = CommentTree()
-        cdict[topic_id] = root
+async def topic(request: Request, topic_id: int):
+    db = request.state.db
+    topic = db.fetch_topic(topic_id)
+    page = PageTemplate(f"LLM Experiments -- {topic.title}")
+    comments = db.fetch_comments(topic_id)
+    comment_tree = _build_tree(comments, topic_id)
 
-        # Create a comment tree for rendering.
-        for comment in comments:
-            if comment.id in cdict:
-                tree = cdict[comment.id]
-                tree.comment = comment
-            else:
-                tree = CommentTree(
-                    comment=comment,
-                    children=[],
-                )
-                cdict[comment.id] = tree
-
-            if comment.parent_id in cdict:
-                cdict[comment.parent_id].children.append(tree)
-            else:
-                cdict[comment.parent_id] = CommentTree(children=[tree])
-        with page.body:
-            dom.h2(topic.title)
-            if topic.url:
-                dom.a(topic.url, href=topic.url, cls="link")
-                dom.hr()
-            if topic.description:
-                dom.i(dominate.util.raw(hacker_news_to_html(topic.description)))
-                dom.hr()
-            _comments(root, depth=0)
-            comment_box(topic_id, topic_id, -1, comment="")
+    with page.body:
+        dom.h2(topic.title)
+        if topic.url:
+            dom.a(topic.url, href=topic.url, cls="link")
+            dom.hr()
+        if topic.description:
+            dom.i(dominate.util.raw(hacker_news_to_html(topic.description)))
+            dom.hr()
+        _comments(comment_tree, depth=0)
+        comment_box(topic_id, topic_id, -1, comment="")
     return HTMLResponse(page.render())
 
 
 @app.get("/topic/new", response_class=RedirectResponse)
-async def new_topic(topic_url: str, topic_description: str):
-    with _init_db() as db:
-        topic = _insert_topic(db, Topic(url=topic_url, description=topic_description))
+async def new_topic(request: Request, topic_url: str, topic_description: str):
+    db = request.state.db
+    topic = db.insert_topic(Topic(url=topic_url, description=topic_description))
     return RedirectResponse(url=f"/topic/{topic.id}", status_code=303)
 
 
@@ -641,11 +517,10 @@ async def get_prompt(prompt_type: str):
 
 
 @app.get("/")
-async def index():
+async def index(request: Request):
     page = PageTemplate("LLM Experiments")
-    with _init_db() as db:
-        cursor = db.execute("SELECT id, title FROM topics")
-        topics = cursor.fetchall()
+    db = request.state.db
+    topics = db.fetch_topics()
 
     with page.body:
         dom.h2("Can LLMs Make Us Better People?")
@@ -660,6 +535,6 @@ async def index():
       """
         )
         with dom.ul():
-            for id, title in topics:
-                dom.li(dom.a(title, cls="link", href=f"/topic/{id}"))
+            for topic in topics:
+                dom.li(dom.a(topic.title, cls="link", href=f"/topic/{topic.id}"))
     return HTMLResponse(page.render())

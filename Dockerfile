@@ -4,7 +4,6 @@ RUN pip install uv
 COPY pyproject.toml .
 RUN uv venv && uv sync --no-install-project
 COPY . .
-RUN uv run scripts/init_db.py
 RUN uv sync
 EXPOSE 8000
 
