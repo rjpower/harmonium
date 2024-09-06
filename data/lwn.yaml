@@ -1,0 +1,282 @@
+comments:
+- replies:
+  - replies:
+    - replies: []
+      text: "I would personally love to have subcategories so that I can filter away\
+        \ the \u201CPython\u201D news (what someone on python-devel thinks of the\
+        \ operator-of-the-day is not particularly pertinent to my interests) without\
+        \ taking away all of \u201CDevelopment\u201D. But in the meantime, I can just\u2026\
+        \ not read those stories. It's fine. I'm happy that LWN has significantly\
+        \ increased its amount of stories over the last couple of years, even though\
+        \ some of the bulk is in areas I don't care about."
+      title: What is this?
+    text: Your comment is grossly inappropriate. Funny enough, this is a project for
+      *Python*, which is well covered at LWN. It just happens to be implemented in
+      Rust.
+    title: What is this?
+  - replies: []
+    text: What an extremely normal thing to say.
+    title: What is this?
+  - replies:
+    - replies:
+      - replies:
+        - replies:
+          - replies:
+            - replies:
+              - replies:
+                - replies:
+                  - replies: []
+                    text: "I\u2019ll leave it at this: actually, banning everyone\
+                      \ you disagree with is not necessary to prevent this site, or\
+                      \ any other community, from turning into a far-right clubhouse.\
+                      \ This is a fiction that people have created in order to justify\
+                      \ enforcing ideological conformity in every social space they\
+                      \ participate in. LWN has been around for a quarter of a century,\
+                      \ and people have occasionally disputed political issues for\
+                      \ all that time, and it has not turned into a Nazi bar. It is\
+                      \ not inevitably going to turn into one because people occasionally\
+                      \ criticise corporate diversity gestures."
+                    title: 'Re: Nazi bar'
+                  - replies:
+                    - replies:
+                      - replies: []
+                        text: '> There will inevitably be some users who feel the
+                          bar is too high, some too low. That''s OK. Get used to it.
+                          Develop tolerance. That''s just how humans work.To quote
+                          the GP''s quote - "Iron Crosses and shit" - what do Iron
+                          Crosses have to do with Nazis? (True, they handed them out
+                          with gay abandon, but ...)Setting that bar is hard. PJ''s
+                          was easily expressed, but on occasions unfair - "If I wouldn''t
+                          have it in my living room, I won''t have it on Groklaw"
+                          - which discriminated against other cultures, sadly - I
+                          fell foul of that on several occasions ...The other rule
+                          that was great though, was "if you can''t back it up with
+                          facts, expect it to be deleted". Although *explicit opinion*
+                          was almost invariably okay, too. It''s a shame about flussence
+                          though - I liked him, even if he was a bit OTT on occasion.
+                          I understand he''s a bigwig in the BSD world - sounds like
+                          he might be becoming the ESR of BSD ... whoops ...Cheers,Wol'
+                        title: 'Re: Nazi bar'
+                      text: Further, the implication that there is some curve, and
+                        that by /not/ banning your "worst" users that this will inevitably
+                        cause a movement along that curve and inevitable tolerance
+                        of neo-nazis logically also implies that to prevent this one
+                        must always take action against the "worst" users. Iteratively,
+                        following this logic means you will eventually have to ban
+                        /all/ your users, in order to ensure you don't run the risk
+                        of having neo-nazi users.This is just obvious non-sense.Common-sense
+                        is that you set a bar. You take action against gross violations.
+                        You maybe warn people in and around the bar. And everything
+                        obviously under the bar you just tolerate. That means tolerating
+                        different views and disagreement, under that bar.There will
+                        inevitably be some users who feel the bar is too high, some
+                        too low. That's OK. Get used to it. Develop tolerance. That's
+                        just how humans work.
+                      title: 'Re: Nazi bar'
+                    text: "Okay I can\u2019t resist pointing out that in the original\
+                      \ Nazi bar story that you yourself linked, the guy kicked out\
+                      \ of the bar was wearing \u2018iron crosses and shit\u2019.\
+                      \ He was clearly an actual neo-Nazi! It\u2019s not me missing\
+                      \ the point here!"
+                    title: 'Re: Nazi bar'
+                  text: I don't know if this is a deliberate misunderstanding but
+                    invoking the parable of the nazi bar[0] is not at all about calling
+                    anyone a neo-nazi.It's simply relating the fact that, since the
+                    standards of a community are set by the worst person you don't
+                    ban, the logical conclusion of hands-off moderation is your site
+                    eventually being overrun with awful people, up to and including,
+                    eventually, Nazis. And that preventing this gets harder (and more
+                    "controversial") the further along that curve you are.Nazis are
+                    not invoked as an absolute statement on the current status quo
+                    of this site, then. While awful stuff including fascist rhetoric
+                    is somewhat regularly allowed, our editor is at least decent at
+                    removing the more virulent commenters. (Although you can still
+                    say pretty much whatever you want as long as you're superficially
+                    polite about it or jaqing[1]). It is instead a warning as to the
+                    inevitable endpoint of the current policy.[0]https://en.m.wiktionary.org/wiki/Nazi_bar[1]https://rationalwiki.org/wiki/Just_asking_questions
+                  title: 'Re: Nazi bar'
+                text: "You desperately need to get out of your bubble if you think\
+                  \ such mild disagreement with your values makes it likely someone\
+                  \ is a neo-Nazi, although if you\u2019ve convinced yourself everywhere\
+                  \ outside that bubble is on its way to becoming a Nazi bar then\
+                  \ I guess that\u2019s unlikely."
+                title: 'Re: Nazi bar'
+              text: I suspect you might have a different understanding of the term
+                to the original poster.The point is that you call any bar that lets
+                open Nazis in a Nazi Bar because if you don't moderate and kick them
+                out eventually all your other customers will go somewhere else.If
+                you think it's unfair to call commenters Nazis for accusations of
+                there being a "Rust Agenda" or declaring that the Apache software
+                project is more important than Native Americans, it's strongly correlated
+                with beliefs that are more obviously neo-Nazi, I've seen many such
+                cases on platforms less moderated than this.
+              title: 'Re: Nazi bar'
+            text: I suspect you might have a different understanding of the term to
+              the original poster.The point is that you call any bar that lets open
+              Nazis in a Nazi Bar because if you don't moderate and kick them out
+              eventually all your other customers will go somewhere else.If you think
+              it's unfair to call commenters Nazis for accusations of there being
+              a "Rust Agenda" or declaring that the Apache software project is more
+              important than Native Americans, it's strongly correlated with beliefs
+              that are more obviously neo-Nazi, I've seen many such cases on platforms
+              less moderated than this.
+            title: 'Re: Nazi bar'
+          text: The the comments of the Apache branding article were disgusting.I'll
+            grant LWN staff may have addressed it to the best of their abilities and
+            didn't anticipate it blowing up so horribly, but I wouldn't call it taking
+            so long to lock the comments down a fairly good job.Calling the site a
+            nazi bar is a warning for what it could become if they don't get a hold
+            of the problem of commenters getting away with bigoted dog-whistles unmoderated.
+            It doesn't happen overnight.
+          title: 'Re: Nazi bar'
+        text: "Calling this site a \u2018nazi bar\u2019 because there are occasional\
+          \ troll comments or squabbles over controversial social issues (which Jon\
+          \ does a fairly good job tamping down on) is histrionic and intolerant and,\
+          \ most of all, incredibly unfair to Jon."
+        title: What is this?
+      - replies: []
+        text: Subscribers (I don't know about the free accounts) have a denylist of
+          sorts which can be used to hide-by-default sub-threads created by accounts
+          that the person considers unlikely to post something worth reading.Fortunately
+          it works quite well, since unfortunately my denylist is growing a bit every
+          couple months :-(It won't help create more useful content and the noise
+          will still be there getting in the way of better posts in general, but it
+          has less immediate drawbacks than your usual post-karma and reputation mechanics.  It
+          is far more limited, though, and it helps little against throw-away one-use
+          troll accounts.
+        title: What is this?
+      - replies:
+        - replies: []
+          text: Particularly, since I deleted my Twitter account (and I have never
+            used ever much any social networks, aside from one very specialized and
+            obscure subreddit), my life is significantly better, I have less stress
+            in my life (and I have it enough from other sources). Highly recommended!
+          title: What is this?
+        - replies: []
+          text: 'Note his phrase structure: the place was not a nazi bar 12 years
+            ago, something has changed and there is no will to change it back.  It
+            carefully does not say outright that the change referred to in the second
+            and third clauses had anything to do with any similarities between this
+            place and nazi bars.  So if anyone gets offended by the implications,
+            why, it''s their own fault - flussence said nothing of that sort, has
+            he?  </sarcasm>Said that, it was really badly done.   Original cretin
+            had been annoying, but stooping down _below_ its level...'
+          title: What is this?
+        - replies: []
+          text: DanilaBerezin makes an important point that I'd like to generalize.
+            Some places on social media are harmful to even psychologically healthy
+            people. I've seen one of my favorite substackers, a really smart person,
+            go a bit nuts and have to pull back to regain mental health, repeatedly.If
+            you ever feel you need to participate somewhere, that probably means that
+            you should stop ASAP.
+          title: Social media can be insidiously harmful
+        text: '> It wasn''t a nazi bar when I subscribed 12 years agoIf you sincerely
+          feel that LWN is a "nazi bar site," my sincere, good-faith suggestion is
+          that you take a break from politics on social media, or even better, social
+          media in general. You''ll find it''s incredible how much of a toll social
+          media takes on your mental and emotional health. Take note of the fact that
+          the people you find yourself in a heated argument with over the internet,
+          rarely exist in the real world.'
+        title: What is this?
+      text: "Cancelling a subscription is unironically a great idea. I highly encourage\
+        \ everyone to give it a try if you want threads like these to stop getting\
+        \ a free ride on your dime. Pulling funding for a platform that consistently\
+        \ gives the worst kind of bigots little more than a disapproving stare, light\
+        \ chiding, slap on the wrist after they come in shitting on the floor in public\
+        \ - it's a much harder to ignore message than merely complaining about them\
+        \ for years on end and getting yelled at or aggressively shushed.I came across\
+        \ an enlightening phrase this week - \u201Cyour community standards are set\
+        \ by the biggest asshole you won't ban\u201D - in the replies tohttps://social.treehouse.systems/@marcan/112976577519704731,\
+        \ which perhaps not coincidentally is a thread making fun of a crowd of people\
+        \ with the same smell and lack of self-awareness as the OP.Reading that line\
+        \ really drove home the realisation that my personal standards and principles\
+        \ have grown incompatible with a lot of situations I used to silently put\
+        \ up with ten or twenty years ago, and I am not going to compromise them for\
+        \ the sake of mere content consumption.I cannot envision a future where I\
+        \ have anything constructive to add here given the state of things, so I intend\
+        \ to make this message my last and take these vague feelings of disappointment\
+        \ and regret with me. The thing is, I'm not the first one to give up. There\
+        \ used to be a lot more impromptu displays of domain expertise, and a lot\
+        \ less drive-by screeching about an article's use of pronouns and dogwhistle\
+        \ words used exclusively by racists and ignorant programming language elitism\
+        \ from Non-Practicing Entities and other utterly brain-dead drool from factory-produced\
+        \ plastic zombies with a pullstring on their back and the same five tiresome\
+        \ catchphrases. \"Rust agenda\" my ass, grow up.Honestly I wish I could nuke\
+        \ all trace of my ever having been associated with this site. It wasn't a\
+        \ nazi bar when I subscribed 12 years ago, something changed there and there's\
+        \ no will to change it back.good luck with whatever this is"
+      title: What is this?
+    text: Maybe you should cancel your subscription. Oh, wait, you're not a subscriber...
+    title: What is this?
+  - replies:
+    - replies:
+      - replies:
+        - replies: []
+          text: 'Thinks of some recent experiences on a prominent website.Shudders.Emphatically
+            agrees: no voting!Strongly commends geofft''s post (https://lwn.net/Articles/986563/).
+            Well said, sir!'
+          title: Shudder
+        text: Please no. Mobs aren't usually correct either..
+        title: LWN's chronological comment view is the worst feature of the website
+      text: 'LWN: It would be great if you added a comment voting system, like Reddit
+        or StackOverflow.'
+      title: LWN's chronological comment view is the worst feature of the website
+    - replies: []
+      text: '> if you are seeing a highly technical and meritocratic community have
+        a strong bias in favor of a certain tool or technology,There is a considerable
+        difference between a "community bias" and a handful of folks drowning everything
+        else through sheer volume.'
+      title: LWN's chronological comment view is the worst feature of the website
+    - replies:
+      - replies: []
+        text: Even better, the entire comment title bar is clickable, not just the
+          `[-]` bit. Makes a much nicer target :) .
+        title: LWN's chronological comment view has been improved with the [-] feature
+      text: Things are better than they were though. At least now one can do a single
+        mouse click on the [-] of the trollish OP, and the whole ugly mess just disappears.
+      title: LWN's chronological comment view has been improved with the [-] feature
+    text: 'The fact that your comment and the replies pushes down attempts at thoughtful
+      conversation like my comment below is a disservice to the members (especially
+      paying members) who don''t have an agenda of any direction to push other than
+      the agenda of thoughtful and reality-moored discussion. There should be editorial
+      oversight to just delete irrelevant spam like this entire thread. We''ve known
+      since the days of Slashdot (or, frankly, since whoever first said "A lie gets
+      halfway around the world while truth is still putting on its pants") that "first
+      post" comments are rarely thoughtful comments.But since we have no choice but
+      to have some low-quality, almost-flamebait discussion as the first thing below
+      the article, I''ll offer this contribution: if you are seeing a highly technical
+      and meritocratic community have a strong bias in favor of a certain tool or
+      technology, consider that the real agenda may be seeking meritorious technical
+      quality, and steadfastly following that metric wherever it may lead. Despite
+      my problems with the comment system, I pay LWN because I trust that their editors
+      will not reject something of technical merit because they worry that too many
+      other things of technical merit are written in the same language.'
+    title: LWN's chronological comment view is the worst feature of the website
+  - replies:
+    - replies: []
+      text: "> It changed from \u201CLinux Weekly News\u201D to \u201CLWN\u201D many\
+        \ years ago, I know not why.The LWN FAQ (in the sidebar) has said this for\
+        \ at least 22 years:> What does LWN stand for, anyway?>> LWN, initially, was\
+        \ \"Linux Weekly News.\" That name has been deemphasized over time as we have\
+        \ moved beyond just the weekly coverage, and as we have looked at the free\
+        \ software community as a whole. We have yet to come up with a better meaning\
+        \ for LWN, however."
+      title: What is this?
+    text: "It changed from \u201CLinux Weekly News\u201D to \u201CLWN\u201D many years\
+      \ ago, I know not why."
+    title: What is this?
+  text: So to be clear, this is no longer Linux Weekly News, it's Rust Daily News?
+    Is there no editorial oversight of the Rust agenda on this site?There need to
+    be some serious changes to the staff and content being published. This is a disservice
+    to the members who don't have a Rust agenda to push.
+  title: What is this?
+topics:
+- description: "Version 0.3.0 of the uv\nPython package and project manager has been\
+    \ released. Introduced in\nFebruary, uv is written in Rust and aims to be \"Cargo\
+    \ for\nPython\".  Notable changes in this release include the addition of\ninterfaces\
+    \ for managing projects, installing\nPython, and running scripts,\nalong with\
+    \ adding new documentation. See the\naccompanying blog post for more information.\n\
+    \n\n to post comments"
+  id: null
+  title: uv 0.3.0 released
+  url: https://lwn.net/Articles/986528/

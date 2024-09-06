@@ -1,21 +1,21 @@
 import contextlib
 import json
+import logging
 import os
 import re
 import typing
 
 import dominate
 import dominate.tags as dom
-import dotenv
 import openai
+import json
 import yaml
-from fastapi import Cookie, FastAPI, Form, Response, Request
+from fastapi import Cookie, FastAPI, Form, Response, Request, APIRouter
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from insight.database import User, Comment, Topic, DB, CommentTree, Refinement
 
-dotenv.load_dotenv(dotenv_path=os.environ.get("SECRETS_PATH"))
 
 MODELS = set(
     [
@@ -80,8 +80,8 @@ def refine_comment(
     parents: typing.List[Comment],
 ) -> Refinement:
     try:
-        print(
-            "Refine:",
+        logging.info(
+            "Refine: %s",
             {
                 "model": model,
                 "system_prompt": system_prompt,
@@ -116,7 +116,7 @@ def refine_comment(
             ],
             response_format={"type": "json_object"},
         )
-        print(completion)
+        logging.info("Refinment done %s", completion)
         content = completion.choices[0].message.content
         content = json.loads(content)
         result = Refinement(
@@ -190,6 +190,15 @@ htmx-request .htmx-indicator {
 htmx-request.htmx-indicator {
    display: inline-block;
 }
+
+.navbar-nav .nav-link img {
+    filter: brightness(0.6);
+    transition: filter 0.3s ease;
+}
+
+.navbar-nav .nav-link:hover img {
+    filter: brightness(1);
+}
 """
             )
 
@@ -197,10 +206,17 @@ htmx-request.htmx-indicator {
             with dom.body(cls="d-flex flex-column min-vh-100"):
                 with dom.nav(cls="navbar navbar-expand-lg navbar-light bg-light"):
                     with dom.div(cls="container"):
-                        dom.a("LLM Experiments", href="/", cls="navbar-brand")
+                        dom.a("Harmonium", href="/", cls="navbar-brand")
                         with dom.div(cls="navbar-nav ms-auto"):
-                            dom.a("Home", href="/", cls="nav-link")
+                            dom.a("Demo", href="/demo", cls="nav-link")
                             dom.a("Settings", href="/settings", cls="nav-link")
+                            dom.a(
+                                dom.img(src="static/github-mark.svg", alt="GitHub", width="24", height="24", cls="me-1"),
+                                "GitHub",
+                                href="https://github.com/rjpower/harmonium",
+                                cls="nav-link d-flex align-items-center",
+                                target="_blank"
+                            )
 
                 self.body = dom.main(cls="container flex-grow-1")
 
@@ -208,7 +224,7 @@ htmx-request.htmx-indicator {
         with self.doc:
             with dom.footer(cls="footer mt-auto py-3 bg-light"):
                 with dom.div(cls="container text-center"):
-                    dom.p("© 2024 LLM Experiments. All rights reserved.", cls="mb-0")
+                    dom.p("© 2024 All rights reserved.", cls="mb-0")
         return self.doc.render()
 
 
@@ -243,37 +259,10 @@ def _comments(tree: typing.Optional[CommentTree], depth: int = 0):
 
     return ul_element
 
-
-@contextlib.asynccontextmanager
-async def lifespan(app: FastAPI):
-    app.state.db = DB(
-        database=os.getenv("DB_NAME", None),
-        db_type=os.getenv("DB_TYPE", None),
-        user=os.getenv("DB_USER", None),
-        password=os.getenv("DB_PASS", None),
-        db_host=os.getenv("DB_HOST", None),
-        db_port=os.getenv("DB_PORT", None),
-    )
-    app.state.llm_client = openai.OpenAI(
-        base_url="https://openrouter.ai/api/v1",
-        api_key=os.getenv("OPENROUTER_API_KEY"),
-    )
-    yield
+router = APIRouter()
 
 
-app = FastAPI(lifespan=lifespan)
-app.mount("/static", StaticFiles(directory="static"), name="static")
-
-
-@app.middleware("http")
-async def _inject_dependencies(request: Request, call_next):
-    request.state.db = app.state.db
-    request.state.llm_client = app.state.llm_client
-    response = await call_next(request)
-    return response
-
-
-@app.get("/topic/comment")
+@router.get("/topic/comment")
 def comment(topic_id: int, parent_id: int, loc: int):
     return HTMLResponse(
         dom.a(
@@ -287,7 +276,7 @@ def comment(topic_id: int, parent_id: int, loc: int):
     )
 
 
-@app.get("/topic/comment_box", response_class=HTMLResponse)
+@router.get("/topic/comment_box", response_class=HTMLResponse)
 def comment_box(
     topic_id: int,
     parent_id: int,
@@ -332,7 +321,7 @@ def comment_box(
     return HTMLResponse(doc.render())
 
 
-@app.post("/topic/comment/new", response_class=HTMLResponse)
+@router.post("/topic/comment/new", response_class=HTMLResponse)
 async def add_comment(
     request: Request,
     topic_id: int = Form(),
@@ -403,7 +392,7 @@ def _build_tree(comments: typing.List[Comment], topic_id: int):
     return root
 
 
-@app.get("/topic/{topic_id}", response_class=HTMLResponse)
+@router.get("/topic/{topic_id}", response_class=HTMLResponse)
 async def topic(request: Request, topic_id: int):
     db = request.state.db
     topic = db.fetch_topic(topic_id)
@@ -425,14 +414,25 @@ async def topic(request: Request, topic_id: int):
     return HTMLResponse(page.render())
 
 
-@app.get("/topic/new", response_class=RedirectResponse)
-async def new_topic(request: Request, topic_url: str, topic_description: str):
+@router.post("/topic/new", response_class=RedirectResponse)
+async def new_topic(
+    request: Request,
+    topic_url: str = Form(),
+    title: str = Form(),
+    topic_description: str = Form(),
+):
     db = request.state.db
-    topic = db.insert_topic(Topic(url=topic_url, description=topic_description))
+    with db.engine.begin() as conn:
+        topic = db.insert_topic(
+            conn,
+            Topic(
+                topic_id=None, title=title, url=topic_url, description=topic_description
+            ),
+        )
     return RedirectResponse(url=f"/topic/{topic.id}", status_code=303)
 
 
-@app.post("/settings/save", response_class=RedirectResponse)
+@router.post("/settings/save", response_class=RedirectResponse)
 async def save_settings(
     new_model: str = Form(...),
     prompt_type: str = Form(...),
@@ -445,7 +445,7 @@ async def save_settings(
     return response
 
 
-@app.get("/settings/reset_prompt", response_class=RedirectResponse)
+@router.get("/settings/reset_prompt", response_class=RedirectResponse)
 async def reset_prompt():
     response = RedirectResponse(url="/settings?status=prompt_reset", status_code=303)
     response.set_cookie(key="prompt_type", value="socrates")
@@ -453,7 +453,7 @@ async def reset_prompt():
     return response
 
 
-@app.get("/settings")
+@router.get("/settings")
 async def settings(
     llm_model: str = Cookie(default=""),
     system_prompt: str = Cookie(default=DEFAULT_PROMPT),
@@ -507,7 +507,7 @@ async def settings(
     return HTMLResponse(page.render())
 
 
-@app.get("/settings/get_prompt")
+@router.get("/settings/get_prompt")
 async def get_prompt(prompt_type: str):
     prompt = PROMPTS.get(prompt_type, DEFAULT_PROMPT)
     return HTMLResponse(
@@ -521,7 +521,7 @@ async def get_prompt(prompt_type: str):
     )
 
 
-@app.get("/")
+@router.get("/")
 async def index(request: Request):
     page = PageTemplate("LLM Experiments")
     db = request.state.db
@@ -529,17 +529,87 @@ async def index(request: Request):
 
     with page.body:
         dom.h2("Can LLMs Make Us Better People?")
-        dom.p(
+        dominate.util.raw(
             """
+  <p>
   An experiment in using LLMs to help us respond better to each other. This is a simple mirror
   of Hacker News which uses an LLM to gently guide comments to ensure they are respectful and
   contribute to the conversation.
 
-  You can play with using different LLMs as arbiters (some are better at following instructions)
-  and adjusting the system prompt yourself.
+  To see how different LLMs handle a charged conversation, see the <a href="/demo">demo</a> page.
+
+  <p>
+  Below are some dummy topics copied from Hacker News: feel free to try adding
+  comments and interacting with them (topics and comments are reset daily).
       """
         )
         with dom.ul():
             for topic in topics:
                 dom.li(dom.a(topic.title, cls="link", href=f"/topic/{topic.id}"))
     return HTMLResponse(page.render())
+
+
+@router.get("/demo", response_class=HTMLResponse)
+async def demo(request: Request):
+    with open("data/comment_demo.yaml", "r") as file:
+        data = yaml.safe_load(file)
+
+    models = set()
+    for item in data:
+        models.update(item['refinement'].keys())
+
+    page = PageTemplate("Model Comparison")
+
+    with page.doc.head:
+        dom.style("""
+            select { margin-bottom: 20px; }
+            .comment-pair { display: flex; margin-bottom: 20px; }
+            .original, .refined { flex: 1; padding: 10px; margin: 5px; border: 1px solid #ccc; }
+            .original { background-color: #ffeeee; }
+            .refined { background-color: #eeffee; }
+            ins { background-color: #aaffaa; text-decoration: none; }
+            del { background-color: #ffaaaa; text-decoration: line-through; }
+        """)
+
+    with page.body:
+        dom.h1("Model Comment Rewrite Comparison")
+        with dom.select(id="modelSelect", onchange="updateComments()"):
+            for model in models:
+                dom.option(model, value=model)
+
+        dom.p()
+        dom.span(
+            "How do different models handle a charged conversation? Below is a converstation from"
+        )
+        dom.a("LWN", href="https://lwn.net/Articles/986528/")
+        dom.span(" that went off the rails.")
+        dom.div(id="comments")
+
+        dom.script(
+            dominate.util.raw(f"""
+            const data = {json.dumps(data)};
+            function updateComments() {{
+                const model = document.getElementById('modelSelect').value;
+                const commentsDiv = document.getElementById('comments');
+                commentsDiv.innerHTML = '';
+                data.forEach(item => {{
+                    if (item.refinement[model] && item.refinement[model].refinement) {{
+                        const div = document.createElement('div');
+                        div.className = 'comment-pair';
+                        div.innerHTML = `
+                            <div class="original">${{item.original_comment}}</div>
+                            <div class="refined">${{item.refinement[model].refinement}}</div>
+                        `;
+                        commentsDiv.appendChild(div);
+                    }}
+                }});
+            }}
+            updateComments();
+            """)
+        )
+
+    return HTMLResponse(page.render())
+
+
+if __name__ == '__main__':
+    app.run(debug=True)

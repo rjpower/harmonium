@@ -142,7 +142,7 @@ class DB:
     def fetch_topic(self, topic_id: int):
         with self.engine.connect() as conn:
             stmt = select(self.topics).where(self.topics.c.id == topic_id)
-            cols = stmt.columns.keys()
+            cols = stmt.subquery().columns.keys()
             result = conn.execute(stmt).fetchone()
             if result:
                 return Topic(**dict(zip(cols, result)))
@@ -151,7 +151,7 @@ class DB:
     def fetch_comments(self, topic_id: int):
         with self.engine.connect() as conn:
             stmt = select(self.comments).where(self.comments.c.topic_id == topic_id)
-            cols = stmt.columns.keys()
+            cols = stmt.subquery().columns.keys()
             results = conn.execute(stmt).fetchall()
             return [Comment(**dict(zip(cols, row))) for row in results]
 
@@ -160,7 +160,7 @@ class DB:
         with self.engine.connect() as conn:
             while True:
                 stmt = select(self.comments).where(self.comments.c.id == comment_id)
-                cols = stmt.columns.keys()
+                cols = stmt.subquery().columns.keys()
                 result = conn.execute(stmt).fetchone()
                 if not result:
                     break
@@ -173,7 +173,7 @@ class DB:
         with self.engine.connect() as conn:
             stmt = select(self.topics)
             results = conn.execute(stmt).fetchall()
-            cols = stmt.columns.keys()
+            cols = stmt.subquery().columns.keys()
 
             print("Results:", results[0])
             return [Topic(**dict(zip(cols, row))) for row in results]
