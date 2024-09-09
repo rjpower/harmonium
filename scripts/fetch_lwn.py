@@ -3,7 +3,7 @@ import requests
 from bs4 import BeautifulSoup
 import yaml
 from typing import List, Dict
-from insight.database import Topic, Comment
+from harmonium.database import Topic, Comment
 
 def fetch_lwn_page(url: str) -> BeautifulSoup:
     response = requests.get(url)

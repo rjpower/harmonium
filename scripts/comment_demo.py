@@ -3,8 +3,8 @@ import openai
 import dotenv
 import tqdm
 import yaml
-from insight import app
-from insight.database import Topic, Comment, Refinement
+from harmonium import app
+from harmonium.database import Topic, Comment, Refinement
 
 
 def process_comments(input_file, output_file):

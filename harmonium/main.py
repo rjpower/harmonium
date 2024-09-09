@@ -10,12 +10,8 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 
-from insight.app import router
-from insight.database import DB
-
-import dotenv
-
-dotenv.load_dotenv(dotenv_path=os.environ.get("SECRETS_PATH"))
+from harmonium.app import router
+from harmonium.database import DB
 
 def reinit_db():
     try:

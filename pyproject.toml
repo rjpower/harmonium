@@ -1,9 +1,9 @@
 [build-system]
-requires = ["setuptools>=42", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
-name = "insight"
+name = "harmonium"
 version = "0.1.0"
 description = "Better Comments"
 authors = [{ name = "Russell Power", email = "russell.power@gmail.com" }]
@@ -27,5 +27,5 @@ dependencies = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
-[tool.setuptools.packages.find]
-where = ["src"]
+[tool.hatch.build.targets.wheel]
+packages = ["harmonium"]

@@ -14,7 +14,7 @@ from fastapi import Cookie, FastAPI, Form, Response, Request, APIRouter
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from insight.database import User, Comment, Topic, DB, CommentTree, Refinement
+from harmonium.database import User, Comment, Topic, DB, CommentTree, Refinement
 
 
 MODELS = set(
@@ -208,7 +208,7 @@ htmx-request.htmx-indicator {
                     with dom.div(cls="container"):
                         dom.a("Harmonium", href="/", cls="navbar-brand")
                         with dom.div(cls="navbar-nav ms-auto"):
-                            dom.a("Demo", href="/demo", cls="nav-link")
+                            dom.a("Conversation Demo", href="/demo", cls="nav-link")
                             dom.a("Settings", href="/settings", cls="nav-link")
                             dom.a(
                                 dom.img(src="static/github-mark.svg", alt="GitHub", width="24", height="24", cls="me-1"),
@@ -329,7 +329,7 @@ async def add_comment(
     comment: str = Form(),
     user_id: str = Form(""),
     llm_model: str = Cookie(default=DEFAULT_MODEL),
-    system_prompt: str = Cookie(default=DEFAULT_PROMPT),
+    prompt_type: str = Cookie(default="socrates"),
 ):
     db = request.state.db
     topic = db.fetch_topic(topic_id=topic_id)
@@ -337,7 +337,7 @@ async def add_comment(
     refinement: Refinement = refine_comment(
         client=request.state.llm_client,
         model=llm_model,
-        system_prompt=system_prompt,
+        system_prompt=PROMPTS.get(prompt_type, DEFAULT_PROMPT),
         topic=topic,
         comment=comment,
         parents=parents,
@@ -436,12 +436,10 @@ async def new_topic(
 async def save_settings(
     new_model: str = Form(...),
     prompt_type: str = Form(...),
-    new_prompt: str = Form(...),
 ):
     response = RedirectResponse(url="/settings?status=success", status_code=303)
     response.set_cookie(key="llm_model", value=new_model)
     response.set_cookie(key="prompt_type", value=prompt_type)
-    response.set_cookie(key="system_prompt", value=new_prompt)
     return response
 
 
@@ -456,7 +454,6 @@ async def reset_prompt():
 @router.get("/settings")
 async def settings(
     llm_model: str = Cookie(default=""),
-    system_prompt: str = Cookie(default=DEFAULT_PROMPT),
     prompt_type: str = Cookie(default="socrates"),
     status: str = None,
 ):
@@ -474,29 +471,12 @@ async def settings(
             with dom.div(cls="mb-3"):
                 dom.label("Prompt Type", cls="form-label", for_="prompt_type")
                 with dom.select(
-                    name="prompt_type",
-                    id="prompt_type",
-                    cls="form-select",
-                    **{
-                        "hx-get": "/settings/get_prompt",
-                        "hx-target": "#new_prompt",
-                        "hx-trigger": "change",
-                        "hx-swap": "outerHTML",
-                    },
+                    name="prompt_type", id="prompt_type", cls="form-select"
                 ):
                     for pt in PROMPTS.keys():
                         dom.option(
                             pt.capitalize(), value=pt, selected=(pt == prompt_type)
                         )
-            with dom.div(cls="mb-3"):
-                dom.label("System Prompt", cls="form-label", for_="new_prompt")
-                dom.textarea(
-                    system_prompt,
-                    name="new_prompt",
-                    id="new_prompt",
-                    cls="form-control",
-                    rows="10",
-                )
             with dom.div(cls="d-flex justify-content-between"):
                 dom.a(
                     "Reset to Default",
@@ -505,20 +485,6 @@ async def settings(
                 )
                 dom.button("Save Changes", type="submit", cls="btn btn-primary")
     return HTMLResponse(page.render())
-
-
-@router.get("/settings/get_prompt")
-async def get_prompt(prompt_type: str):
-    prompt = PROMPTS.get(prompt_type, DEFAULT_PROMPT)
-    return HTMLResponse(
-        dom.textarea(
-            dominate.util.raw(prompt),
-            name="new_prompt",
-            id="new_prompt",
-            cls="form-control",
-            rows="10",
-        ).render()
-    )
 
 
 @router.get("/")
@@ -536,14 +502,14 @@ async def index(request: Request):
   of Hacker News which uses an LLM to gently guide comments to ensure they are respectful and
   contribute to the conversation.
 
-  To see how different LLMs handle a charged conversation, see the <a href="/demo">demo</a> page.
+  To see how different LLMs handle a charged conversation, see the <a href="/demo">conversation demo</a> page.
 
   <p>
   Below are some dummy topics copied from Hacker News: feel free to try adding
   comments and interacting with them (topics and comments are reset daily).
       """
         )
-        with dom.ul():
+        with dom.ol():
             for topic in topics:
                 dom.li(dom.a(topic.title, cls="link", href=f"/topic/{topic.id}"))
     return HTMLResponse(page.render())
@@ -609,7 +575,3 @@ async def demo(request: Request):
         )
 
     return HTMLResponse(page.render())
-
-
-if __name__ == '__main__':
-    app.run(debug=True)

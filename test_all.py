@@ -1,13 +1,18 @@
+import os
 import pytest
 import logging
 from fastapi.testclient import TestClient
-from insight.app import app
-
+from harmonium.main import create_app
 
 @pytest.fixture(scope="module")
 def client():
     logging.getLogger("fastapi").setLevel(logging.DEBUG)
     logging.getLogger("uvicorn").setLevel(logging.DEBUG)
+
+    import dotenv
+
+    dotenv.load_dotenv(".env.debug")
+    app = create_app()
 
     with TestClient(app) as client:
         yield client
@@ -25,7 +30,8 @@ def test_settings(client):
         response.status_code == 200
     ), f"Unexpected status code: {response.status_code}. Response text: {response.text}"
 
-def test_new_topic(client):
+
+def _new_topic(client):
     response = client.post(
         "/topic/new",
         data={
@@ -39,15 +45,20 @@ def test_new_topic(client):
     topic_id = response.headers["Location"].split("/")[-1]
     return int(topic_id)
 
+
+def test_new_topic(client):
+    _new_topic(client)
+
+
 def test_topic(client):
-    topic_id = test_new_topic(client)
+    topic_id = _new_topic(client)
     response = client.get(f"/topic/{topic_id}")
     assert (
         response.status_code == 200
     ), f"Unexpected status code: {response.status_code}. Response text: {response.text}"
 
 def test_comment_box(client):
-    topic_id = test_new_topic(client)
+    topic_id = _new_topic(client)
     response = client.get(f"/topic/comment_box?topic_id={topic_id}&parent_id={topic_id}")
     assert (
         response.status_code == 200
@@ -72,8 +83,3 @@ def test_settings_save(client):
 def test_reset_prompt(client):
     response = client.get("/settings/reset_prompt")
     assert response.status_code == 200, f"Unexpected status code: {response.status_code}. Response text: {response.text}"
-
-def test_get_prompt(client):
-    response = client.get("/settings/get_prompt?prompt_type=socrates")
-    assert response.status_code == 200, f"Unexpected status code: {response.status_code}. Response text: {response.text}"
-    assert "textarea" in response.text, f"Expected content not found. Response text: {response.text}"

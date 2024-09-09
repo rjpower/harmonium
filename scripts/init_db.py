@@ -1,8 +1,6 @@
 import os
 import dotenv
-from insight.database import *
-
-dotenv.load_dotenv(dotenv_path=os.environ.get("SECRETS_PATH"))
+from harmonium.database import *
 
 if __name__ == "__main__":
     print("connecting.")

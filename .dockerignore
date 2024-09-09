@@ -8,7 +8,7 @@ __pycache__
 .venv
 
 # secrets
-.env
+.env*
 
 # UV specific
 .uv/
