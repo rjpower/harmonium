@@ -343,13 +343,13 @@ async def add_comment(
         parents=parents,
     )
     if refinement.status == "ok":
-        comment = Comment(
+        new_comment = Comment(
             topic_id=topic_id,
             user_id=user_id,
             parent_id=parent_id,
             comment=comment,
         )
-        db.insert_comment(comment)
+        comment = db.insert_comment(new_comment)
         return HTMLResponse(_comment(comment).render())
     else:
         return comment_box(topic_id, parent_id, -1, comment, refinement=refinement)
@@ -422,13 +422,11 @@ async def new_topic(
     topic_description: str = Form(),
 ):
     db = request.state.db
-    with db.engine.begin() as conn:
-        topic = db.insert_topic(
-            conn,
-            Topic(
-                topic_id=None, title=title, url=topic_url, description=topic_description
-            ),
-        )
+    topic = db.insert_topic(
+        Topic(
+            topic_id=None, title=title, url=topic_url, description=topic_description
+        ),
+    )
     return RedirectResponse(url=f"/topic/{topic.id}", status_code=303)
 
 

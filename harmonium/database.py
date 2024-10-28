@@ -108,36 +108,37 @@ class DB:
     def insert_dummy_data(self):
         with open("data/ycombinator.yaml", "r") as f:
             docs = yaml.safe_load(f)
-            with self.engine.begin() as conn:
-                for topic in tqdm.tqdm(docs["topics"]):
-                    self.insert_topic(conn, Topic(**topic))
-                for comment in tqdm.tqdm(docs["comments"]):
-                    self.insert_comment(conn, Comment(**comment))
+            for topic in tqdm.tqdm(docs["topics"]):
+                self.insert_topic(Topic(**topic))
+            for comment in tqdm.tqdm(docs["comments"]):
+                self.insert_comment(Comment(**comment))
 
-    def insert_comment(self, conn, comment: Comment):
-        stmt = insert(self.comments).values(
-            topic_id=comment.topic_id,
-            user_id=comment.user_id,
-            parent_id=comment.parent_id,
-            comment=comment.comment,
-        )
-        if comment.id is not None:
-            stmt = stmt.values(id=comment.id)
-        result = conn.execute(stmt)
-        comment.id = result.inserted_primary_key[0]
-        return comment
+    def insert_comment(self, comment: Comment):
+        with self.engine.begin() as conn:
+            stmt = insert(self.comments).values(
+                topic_id=comment.topic_id,
+                user_id=comment.user_id,
+                parent_id=comment.parent_id,
+                comment=comment.comment,
+            )
+            if comment.id is not None:
+                stmt = stmt.values(id=comment.id)
+            result = conn.execute(stmt)
+            comment.id = result.inserted_primary_key[0]
+            return comment
 
-    def insert_topic(self, conn, topic: Topic):
-        stmt = insert(self.topics).values(
-            title=topic.title,
-            url=topic.url,
-            description=topic.description,
-        )
-        if topic.id is not None:
-            stmt = stmt.values(id=topic.id)
-        result = conn.execute(stmt)
-        topic.id = result.inserted_primary_key[0]
-        return topic
+    def insert_topic(self, topic: Topic):
+        with self.engine.begin() as conn:
+            stmt = insert(self.topics).values(
+                title=topic.title,
+                url=topic.url,
+                description=topic.description,
+            )
+            if topic.id is not None:
+                stmt = stmt.values(id=topic.id)
+            result = conn.execute(stmt)
+            topic.id = result.inserted_primary_key[0]
+            return topic
 
     def fetch_topic(self, topic_id: int):
         with self.engine.connect() as conn:
