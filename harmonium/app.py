@@ -492,21 +492,64 @@ async def index(request: Request):
     topics = db.fetch_topics()
 
     with page.body:
-        dom.h2("Can LLMs Make Us Better People?")
+        dom.h2("Better Conversations through ML?")
         dominate.util.raw(
             """
   <p>
-  An experiment in using LLMs to help us respond better to each other. This is a simple mirror
-  of Hacker News which uses an LLM to gently guide comments to ensure they are respectful and
-  contribute to the conversation.
-
-  To see how different LLMs handle a charged conversation, see the <a href="/demo">conversation demo</a> page.
+  Comments on the internet. Like everyone else, I can't help to look at them, only to quickly want to look away.
 
   <p>
-  Below are some dummy topics copied from Hacker News: feel free to try adding
-  comments and interacting with them (topics and comments are reset daily).
+  Somehow no matter the audience or dryness of the topic, comment forums seem to almost 
+  inevitably spiral into a chaotic mess of personal attacks. And yet, there's <i>so much 
+  value</i> to be extracted (...much of the time) from the knowledge and 
+  perspective of others.
+
+  <p> I was curious if we could use LLMs (and how much it would cost) to let us communicate with
+  each other better. Instead of filtering, what if we let LLMs help us express ourselves
+  to each other in a healthier manner?
+
+  <p> Unsurprisingly, the LLMs are good at deflecting obviously personal
+  attacks.  Perhaps more surprising was that they aren't that easy to jailbreak
+  out of their system prompt, and that LLama3-405B was the best of all of models
+  I tried at following prompts. All of the models tend to rewrite
+  comments in a relatively stilted manner (sigh, other than of course when you
+  turn on the "evil" prompt), but it's not bad.
+  
+  <p>To see an example of how LLMs handle a charged conversation, see the <a
+  href="/demo">conversation demo</a> page.  
       """
         )
+        dom.h2("Cost")
+        dom.p(
+            """
+So how much does it cost to do this? It's surprisingly affordable, and I imagine
+someone will figure out how to package it into an API soon enough. Processing
+the average comment and parent tree costs about $0.002 (2/10 of a cent) when 
+using a hosted LLama3 provider."""
+        )
+
+        dom.p(
+            """
+With some simple filters and cheaper models in front of it, it would certainly
+be viable to deploy for most use cases. (I mean, if you've got enough users that
+this matters, you probably can afford it...). A risk would be someone
+figuring out how to jailbreak and use you as a free LLM service, but rate limits
+and filters would likely catch the vast majority of freeloaders.
+"""
+        )
+
+        dom.h2("Example Site")
+        dominate.util.raw("""
+        <p>
+  Below I mocked up a simple replica of <a
+  href="https://news.ycombinator.com">Hacker News</a> which uses an LLM to
+  gently guide comments to ensure they are respectful and contribute to the
+  conversation.  Feel free to try adding comments and interacting with them
+  (topics and comments are reset daily).
+  <p>
+You can also change the system prompt to make the LLM deliberately evil or
+  incoherent if you like in the <a href="settings">settings</a>.
+  """)
         with dom.ol():
             for topic in topics:
                 dom.li(dom.a(topic.title, cls="link", href=f"/topic/{topic.id}"))
